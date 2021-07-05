@@ -1,4 +1,5 @@
 from transformers.models.bert.modeling_flax_bert import FlaxPreTrainedModel, FlaxBertEncoder, FlaxBertPooler, FlaxBaseModelOutputWithPooling
+from transformers.models.vit.modeling_flax_vit import FlaxViTModule
 from typing import Tuple, Optional
 from flax.core.frozen_dict import FrozenDict
 import jax
