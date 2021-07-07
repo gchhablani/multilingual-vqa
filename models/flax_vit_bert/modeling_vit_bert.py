@@ -1,10 +1,12 @@
-from transformers.models.bert.modeling_flax_bert import FlaxPreTrainedModel, FlaxBertEncoder, FlaxBertPooler, FlaxBaseModelOutputWithPooling
+from transformers.models.bert.modeling_flax_bert import FlaxPreTrainedModel, FlaxBertEncoder, FlaxBertPooler, FlaxBertOnlyMLMHead
+from transformers.modeling_flax_outputs import FlaxBaseModelOutputWithPooling, FlaxMaskedLMOutput
 from transformers.models.vit.modeling_flax_vit import FlaxViTModule
 from typing import Tuple, Optional
 from flax.core.frozen_dict import FrozenDict
 import jax
 import flax.linen as nn
-from configuration_vit_bert import ViTBertConfig
+import jax.numpy as jnp
+from .configuration_vit_bert import ViTBertConfig
 
 
 class FlaxViTBertEmbeddings(nn.Module):
@@ -316,3 +318,246 @@ class FlaxViTBertModel(FlaxPreTrainedModel):
 # Usage
 # >>> flax_model = FlaxViTBertModel.from_bert_vit_pretrained('bert-base-uncased', 'google/vit-base-patch16-224-in21k', seed=0, dtype=jnp.float32)
 # >>> outputs = flax_model(input_ids, attention_mask,token_type_ids, position_ids, pixel_values, visual_attention_mask, visual_token_type_ids, visual_position_ids, output_hidden_states=True)
+
+class FlaxViTBertForMaskedLMModule(nn.Module):
+    config: ViTBertConfig
+    dtype: jnp.dtype = jnp.float32
+
+    def setup(self):
+        self.model = FlaxViTBertModule(config=self.config, add_pooling_layer=False, dtype=self.dtype)
+        self.cls = FlaxBertOnlyMLMHead(config=self.config.bert_config, dtype=self.dtype)
+
+    def __call__(
+        self,
+        input_ids,
+        attention_mask,
+        token_type_ids,
+        position_ids,
+        pixel_values,
+        visual_attention_mask,
+        visual_token_type_ids, 
+        visual_position_ids,
+        deterministic: bool = True,
+        output_attentions: bool = False,
+        output_hidden_states: bool = False,
+        return_dict: bool = True,
+    ):
+
+        # Model
+        outputs = self.model(
+                input_ids,
+                attention_mask,
+                token_type_ids,
+                position_ids,
+                pixel_values,
+                visual_attention_mask,
+                visual_token_type_ids, 
+                visual_position_ids,
+                deterministic=deterministic,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+        )
+
+        hidden_states = outputs[0]
+        if self.config.bert_config.tie_word_embeddings:
+            shared_embedding = self.model.variables["params"]["embeddings"]["word_embeddings"]["embedding"]
+        else:
+            shared_embedding = None
+
+        # Compute the prediction scores
+        logits = self.cls(hidden_states, shared_embedding=shared_embedding)
+
+        if not return_dict:
+            return (logits,) + outputs[1:]
+
+        return FlaxMaskedLMOutput(
+            logits=logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+class FlaxViTBertForMaskedLM(FlaxPreTrainedModel):
+    config_class: ViTBertConfig
+    module_class = FlaxViTBertForMaskedLMModule
+    
+    def __init__(
+        self, config: ViTBertConfig, input_shape: Tuple = None, seed: int = 0, dtype: jnp.dtype = jnp.float32, **kwargs
+    ):
+
+        if input_shape is None:
+            input_shape = ((1, 1), (1, config.vit_config.image_size, config.vit_config.image_size, 3), (1, 197))
+
+        module = self.module_class(config=config, dtype=dtype, **kwargs)
+        super().__init__(config, module, input_shape=input_shape, seed=seed, dtype=dtype)
+
+    def init_weights(self, rng: jax.random.PRNGKey, input_shape: Tuple) -> FrozenDict:
+        # init input tensors
+        textual_input_shape = input_shape[0]
+        input_ids = jnp.zeros(textual_input_shape, dtype="i4")
+        token_type_ids = jnp.zeros_like(input_ids)
+        position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), textual_input_shape)
+        attention_mask = jnp.ones_like(input_ids)
+
+        pixel_values = jax.random.normal(rng, input_shape[1])
+        visual_attention_mask = jnp.ones(input_shape[2]) # TODO: Fix this
+        visual_token_type_ids = jnp.ones(input_shape[2]) # TODO: Fix this
+        visual_position_ids = jnp.broadcast_to(jnp.zeros(jnp.atleast_2d(input_ids).shape[-1]), input_shape[2]) # TODO: Fix this
+
+        params_rng, dropout_rng = jax.random.split(rng)
+        rngs = {"params": params_rng, "dropout": dropout_rng}
+
+        return self.module.init(rngs, input_ids, attention_mask, token_type_ids, position_ids, pixel_values,
+        visual_attention_mask,
+        visual_token_type_ids, 
+        visual_position_ids, return_dict=False)[
+            "params"
+        ]
+
+    def __call__(
+        self,
+        input_ids,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        pixel_values=None,
+        visual_attention_mask=None,
+        visual_token_type_ids=None, 
+        visual_position_ids=None,
+        params: dict = None,
+        dropout_rng: jax.random.PRNGKey = None,
+        train: bool = False,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ):
+        output_attentions = output_attentions if output_attentions is not None else self.config.bert_config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.bert_config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.bert_config.return_dict
+
+
+        pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1))
+
+        # init input tensors if not passed
+        if token_type_ids is None:
+            token_type_ids = jnp.zeros_like(input_ids)
+
+        if position_ids is None:
+            position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), input_ids.shape)
+
+        if attention_mask is None:
+            attention_mask = jnp.ones_like(input_ids)
+
+        if visual_token_type_ids is None:
+            visual_token_type_ids = jnp.ones((1,197)) # TODO: Fix this.
+
+        if visual_position_ids is None:
+            visual_position_ids = jnp.broadcast_to(jnp.atleast_2d(jnp.ones((1,197))).shape[-1],(1,197)) # TODO: Fix this.
+
+        if visual_attention_mask is None:
+            visual_attention_mask = jnp.ones((1,197)) # TODO: Fix this.
+
+        # Handle any PRNG if needed
+        rngs = {}
+        if dropout_rng is not None:
+            rngs["dropout"] = dropout_rng
+
+        return self.module.apply(
+            {"params": params or self.params},
+            jnp.array(input_ids, dtype="i4"),
+            jnp.array(attention_mask, dtype="i4"),
+            jnp.array(token_type_ids, dtype="i4"),
+            jnp.array(position_ids, dtype="i4"),
+            jnp.array(pixel_values, dtype=jnp.float32),
+            jnp.array(visual_attention_mask, dtype="i4"),
+            jnp.array(visual_token_type_ids, dtype="i4"),
+            jnp.array(visual_position_ids, dtype="i4"),
+            not train,
+            output_attentions,
+            output_hidden_states,
+            return_dict,
+            rngs=rngs,
+        )
+
+    @classmethod
+    def from_bert_vit_pretrained(
+        cls,
+        bert_model_name_or_path: str = None,
+        vit_model_name_or_path: str = None,
+        *model_args,
+        **kwargs,
+    ) -> FlaxPreTrainedModel:
+
+        kwargs_bert = {
+            argument[len("bert_") :]: value for argument, value in kwargs.items() if argument.startswith("text_")
+        }
+
+        kwargs_vit = {
+            argument[len("vit_") :]: value for argument, value in kwargs.items() if argument.startswith("vision_")
+        }
+
+        # remove text, vision kwargs from kwargs
+        for key in kwargs_bert.keys():
+            del kwargs["bert_" + key]
+        for key in kwargs_vit.keys():
+            del kwargs["vit_" + key]
+
+        # Load and initialize the text and vision model
+        bert_model = kwargs_bert.pop("model", None)
+        if bert_model is None:
+            assert (
+                bert_model_name_or_path is not None
+            ), "If `model` is not defined as an argument, a `bert_model_name_or_path` has to be defined"
+            from transformers import FlaxBertForMaskedLM
+
+            if "config" not in kwargs_bert:
+                from transformers import BertConfig
+
+                bert_config = BertConfig.from_pretrained(bert_model_name_or_path)
+                kwargs_bert["config"] = bert_config
+
+            bert_model = FlaxBertForMaskedLM.from_pretrained(
+                bert_model_name_or_path, *model_args, from_pt=True, **kwargs_bert
+            )
+
+        vit_model = kwargs_vit.pop("model", None)
+        if vit_model is None:
+            assert (
+                vit_model_name_or_path is not None
+            ), "If `model` is not defined as an argument, a `vit_model_name_or_path` has to be defined"
+            from transformers import FlaxViTModel
+
+            if "config" not in kwargs_vit:
+                from transformers import ViTConfig
+
+                vit_config = ViTConfig.from_pretrained(vit_model_name_or_path)
+                kwargs_vit["config"] = vit_config
+
+            vit_model = FlaxViTModel.from_pretrained(vit_model_name_or_path, *model_args, **kwargs_vit)
+
+        # instantiate config with corresponding kwargs
+        dtype = kwargs.pop("dtype", jnp.float32)
+        config = ViTBertConfig.from_bert_vit_configs(bert_model.config, vit_model.config, **kwargs)
+
+        # init model
+        model = cls(config, *model_args, dtype=dtype, **kwargs)
+
+
+
+        model.params['cls'] = bert_model.params['cls']
+        for key in model.params["model"].keys():
+            if key != "embeddings":
+                model.params['model'][key] = bert_model.params['bert'][key]
+            else:
+                model.params['model']["embeddings"]["vit_module"] = vit_model.params
+                for sub_key in bert_model.params['bert'][key]:
+                    model.params['model'][key][sub_key] = bert_model.params['bert'][key][sub_key]
+
+        return model
+
+
+# Usage
+# >>> bert_mlm = FlaxViTBertForMaskedLM.from_bert_vit_pretrained('bert-base-uncased', 'google/vit-base-patch16-224-in21k', seed=0, dtype=jnp.float32)
+# >>> outputs = bert_mlm(input_ids, attention_mask,token_type_ids, position_ids, pixel_values, visual_attention_mask, visual_token_type_ids, visual_position_ids, output_hidden_states=True)
