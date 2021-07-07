@@ -316,3 +316,65 @@ class FlaxViTBertModel(FlaxPreTrainedModel):
 # Usage
 # >>> flax_model = FlaxViTBertModel.from_bert_vit_pretrained('bert-base-uncased', 'google/vit-base-patch16-224-in21k', seed=0, dtype=jnp.float32)
 # >>> outputs = flax_model(input_ids, attention_mask,token_type_ids, position_ids, pixel_values, visual_attention_mask, visual_token_type_ids, visual_position_ids, output_hidden_states=True)
+
+class FlaxViTBertForMaskedLMModule(nn.Module):
+    config: ViTBertConfig
+    dtype: jnp.dtype = jnp.float32
+
+    def setup(self):
+        self.vitbert = FlaxViTBertModule(config=self.config, add_pooling_layer=False, dtype=self.dtype)
+        self.cls = FlaxBertOnlyMLMHead(config=self.config.bert_config, dtype=self.dtype)
+
+    def __call__(
+        self,
+        input_ids,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        pixel_values=None,
+        visual_attention_mask=None,
+        visual_token_type_ids=None, 
+        visual_position_ids=None,
+        params: dict = None,
+        dropout_rng: jax.random.PRNGKey = None,
+        train: bool = False,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ):
+
+        # Model
+        outputs = self.vitbert(
+                input_ids,
+                attention_mask,
+                token_type_ids,
+                position_ids,
+                pixel_values,
+                visual_attention_mask,
+                visual_token_type_ids, 
+                visual_position_ids,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+        )
+
+        hidden_states = outputs[0]
+        if self.config.bert_config.tie_word_embeddings:
+            shared_embedding = self.vitbert.variables["params"]["embeddings"]["word_embeddings"]["embedding"]
+        else:
+            shared_embedding = None
+
+        # Compute the prediction scores
+        logits = self.cls(hidden_states, shared_embedding=shared_embedding)
+
+        if not return_dict:
+            return (logits,) + outputs[1:]
+
+        return FlaxMaskedLMOutput(
+            logits=logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+class FlaxViTBertForMaskedLM(FlaxViTBertModel):
+    module_class = FlaxViTBertForMaskedLMModule
