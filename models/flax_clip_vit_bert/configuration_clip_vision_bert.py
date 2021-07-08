@@ -1,8 +1,8 @@
 import copy
+
+from transformers import BertConfig, CLIPVisionConfig
 from transformers.configuration_utils import PretrainedConfig
 from transformers.utils import logging
-from transformers import BertConfig, CLIPVisionConfig
-
 
 logger = logging.get_logger(__name__)
 
@@ -25,8 +25,17 @@ class CLIPVisionBertConfig(PretrainedConfig):
         self.clip_vision_config = CLIPVisionConfig(**clip_vision_config_dict)
 
     @classmethod
-    def from_bert_clip_vision_configs(cls, bert_config: PretrainedConfig, clip_vision_config: PretrainedConfig, **kwargs):
-        return cls(bert_config_dict=bert_config.to_dict(), clip_vision_config_dict=clip_vision_config.to_dict(), **kwargs)
+    def from_bert_clip_vision_configs(
+        cls,
+        bert_config: PretrainedConfig,
+        clip_vision_config: PretrainedConfig,
+        **kwargs
+    ):
+        return cls(
+            bert_config_dict=bert_config.to_dict(),
+            clip_vision_config_dict=clip_vision_config.to_dict(),
+            **kwargs
+        )
 
     def to_dict(self):
         output = copy.deepcopy(self.__dict__)

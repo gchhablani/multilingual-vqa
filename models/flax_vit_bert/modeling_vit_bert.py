@@ -1,11 +1,21 @@
-from transformers.models.bert.modeling_flax_bert import FlaxPreTrainedModel, FlaxBertEncoder, FlaxBertPooler, FlaxBertOnlyMLMHead
-from transformers.modeling_flax_outputs import FlaxBaseModelOutputWithPooling, FlaxMaskedLMOutput
-from transformers.models.vit.modeling_flax_vit import FlaxViTModule
-from typing import Tuple, Optional
-from flax.core.frozen_dict import FrozenDict
-import jax
+from typing import Optional, Tuple
+
 import flax.linen as nn
+import jax
 import jax.numpy as jnp
+from flax.core.frozen_dict import FrozenDict
+from transformers.modeling_flax_outputs import (
+    FlaxBaseModelOutputWithPooling,
+    FlaxMaskedLMOutput,
+)
+from transformers.models.bert.modeling_flax_bert import (
+    FlaxBertEncoder,
+    FlaxBertOnlyMLMHead,
+    FlaxBertPooler,
+    FlaxPreTrainedModel,
+)
+from transformers.models.vit.modeling_flax_vit import FlaxViTModule
+
 from .configuration_vit_bert import ViTBertConfig
 
 
@@ -21,42 +31,69 @@ class FlaxViTBertEmbeddings(nn.Module):
         self.word_embeddings = nn.Embed(
             bert_config.vocab_size,
             bert_config.hidden_size,
-            embedding_init=jax.nn.initializers.normal(stddev=bert_config.initializer_range),
+            embedding_init=jax.nn.initializers.normal(
+                stddev=bert_config.initializer_range
+            ),
             dtype=self.dtype,
         )
         self.position_embeddings = nn.Embed(
             bert_config.max_position_embeddings,
             bert_config.hidden_size,
-            embedding_init=jax.nn.initializers.normal(stddev=bert_config.initializer_range),
+            embedding_init=jax.nn.initializers.normal(
+                stddev=bert_config.initializer_range
+            ),
             dtype=self.dtype,
         )
         self.token_type_embeddings = nn.Embed(
             bert_config.type_vocab_size,
             bert_config.hidden_size,
-            embedding_init=jax.nn.initializers.normal(stddev=bert_config.initializer_range),
+            embedding_init=jax.nn.initializers.normal(
+                stddev=bert_config.initializer_range
+            ),
             dtype=self.dtype,
         )
 
         self.vit_module = FlaxViTModule(vit_config, dtype=self.dtype)
-        self.visual_projection = nn.Dense(bert_config.hidden_size, dtype=self.dtype, kernel_init=jax.nn.initializers.normal(bert_config.initializer_range, self.dtype))
+        self.visual_projection = nn.Dense(
+            bert_config.hidden_size,
+            dtype=self.dtype,
+            kernel_init=jax.nn.initializers.normal(
+                bert_config.initializer_range, self.dtype
+            ),
+        )
 
         self.visual_position_embeddings = nn.Embed(
             bert_config.max_position_embeddings,
             bert_config.hidden_size,
-            embedding_init=jax.nn.initializers.normal(stddev=bert_config.initializer_range),
+            embedding_init=jax.nn.initializers.normal(
+                stddev=bert_config.initializer_range
+            ),
             dtype=self.dtype,
         )
         self.visual_token_type_embeddings = nn.Embed(
             bert_config.type_vocab_size,
             bert_config.hidden_size,
-            embedding_init=jax.nn.initializers.normal(stddev=bert_config.initializer_range),
+            embedding_init=jax.nn.initializers.normal(
+                stddev=bert_config.initializer_range
+            ),
             dtype=self.dtype,
         )
 
-        self.LayerNorm = nn.LayerNorm(epsilon=bert_config.layer_norm_eps, dtype=self.dtype)
+        self.LayerNorm = nn.LayerNorm(
+            epsilon=bert_config.layer_norm_eps, dtype=self.dtype
+        )
         self.dropout = nn.Dropout(rate=bert_config.hidden_dropout_prob)
-        
-    def __call__(self, input_ids, token_type_ids, position_ids, pixel_values, visual_token_type_ids, visual_position_ids, deterministic: bool = True):
+
+    def __call__(
+        self,
+        input_ids,
+        token_type_ids,
+        position_ids,
+        pixel_values,
+        visual_token_type_ids,
+        visual_position_ids,
+        deterministic: bool = True,
+    ):
         # Embed
         inputs_embeds = self.word_embeddings(input_ids.astype("i4"))
         position_embeds = self.position_embeddings(position_ids.astype("i4"))
@@ -68,20 +105,27 @@ class FlaxViTBertEmbeddings(nn.Module):
         # Visual Embed
         visual_inputs_embeds = self.vit_module(pixel_values=pixel_values)[0]
         visual_inputs_embeds = self.visual_projection(visual_inputs_embeds)
-        visual_token_type_embeddings = self.visual_token_type_embeddings(visual_token_type_ids.astype("i4"))
-        visual_position_embeds = self.visual_position_embeddings(visual_position_ids.astype("i4"))
+        visual_token_type_embeddings = self.visual_token_type_embeddings(
+            visual_token_type_ids.astype("i4")
+        )
+        visual_position_embeds = self.visual_position_embeddings(
+            visual_position_ids.astype("i4")
+        )
 
         # Sum all visual embeddings
-        visual_embeddings = visual_inputs_embeds + visual_token_type_embeddings + visual_position_embeds
+        visual_embeddings = (
+            visual_inputs_embeds + visual_token_type_embeddings + visual_position_embeds
+        )
 
         # Concat
-        hidden_states = jnp.concatenate((word_embeddings, visual_embeddings),axis=1)
+        hidden_states = jnp.concatenate((word_embeddings, visual_embeddings), axis=1)
 
         # Layer Norm
         hidden_states = self.LayerNorm(hidden_states)
         hidden_states = self.dropout(hidden_states, deterministic=deterministic)
         return hidden_states
-      
+
+
 class FlaxViTBertModule(nn.Module):
     config: ViTBertConfig
     dtype: jnp.dtype = jnp.float32  # the dtype of the computation
@@ -100,7 +144,7 @@ class FlaxViTBertModule(nn.Module):
         position_ids,
         pixel_values,
         visual_attention_mask,
-        visual_token_type_ids, 
+        visual_token_type_ids,
         visual_position_ids,
         deterministic: bool = True,
         output_attentions: bool = False,
@@ -108,10 +152,18 @@ class FlaxViTBertModule(nn.Module):
         return_dict: bool = True,
     ):
         hidden_states = self.embeddings(
-            input_ids, token_type_ids, position_ids, pixel_values, visual_token_type_ids, visual_position_ids, deterministic=deterministic
+            input_ids,
+            token_type_ids,
+            position_ids,
+            pixel_values,
+            visual_token_type_ids,
+            visual_position_ids,
+            deterministic=deterministic,
         )
 
-        combined_attention_mask = jnp.concatenate((attention_mask, visual_attention_mask), axis=1)
+        combined_attention_mask = jnp.concatenate(
+            (attention_mask, visual_attention_mask), axis=1
+        )
 
         outputs = self.encoder(
             hidden_states,
@@ -136,44 +188,69 @@ class FlaxViTBertModule(nn.Module):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-      
-      
+
+
 class FlaxViTBertModel(FlaxPreTrainedModel):
     config_class: ViTBertConfig
     module_class = FlaxViTBertModule
 
     def __init__(
-        self, config: ViTBertConfig, input_shape: Tuple = None, seed: int = 0, dtype: jnp.dtype = jnp.float32, **kwargs
+        self,
+        config: ViTBertConfig,
+        input_shape: Tuple = None,
+        seed: int = 0,
+        dtype: jnp.dtype = jnp.float32,
+        **kwargs,
     ):
 
         if input_shape is None:
-            input_shape = ((1, 1), (1, config.vit_config.image_size, config.vit_config.image_size, 3), (1, 197))
+            input_shape = (
+                (1, 1),
+                (1, config.vit_config.image_size, config.vit_config.image_size, 3),
+                (
+                    1,
+                    (config.vit_config.image_size // config.vit_config.patch_size) ** 2
+                    + 1,
+                ),
+            )
 
         module = self.module_class(config=config, dtype=dtype, **kwargs)
-        super().__init__(config, module, input_shape=input_shape, seed=seed, dtype=dtype)
+        super().__init__(
+            config, module, input_shape=input_shape, seed=seed, dtype=dtype
+        )
 
     def init_weights(self, rng: jax.random.PRNGKey, input_shape: Tuple) -> FrozenDict:
         # init input tensors
         textual_input_shape = input_shape[0]
         input_ids = jnp.zeros(textual_input_shape, dtype="i4")
         token_type_ids = jnp.zeros_like(input_ids)
-        position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), textual_input_shape)
+        position_ids = jnp.broadcast_to(
+            jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), textual_input_shape
+        )
         attention_mask = jnp.ones_like(input_ids)
 
         pixel_values = jax.random.normal(rng, input_shape[1])
-        visual_attention_mask = jnp.ones(input_shape[2]) # TODO: Fix this
-        visual_token_type_ids = jnp.ones(input_shape[2]) # TODO: Fix this
-        visual_position_ids = jnp.broadcast_to(jnp.zeros(jnp.atleast_2d(input_ids).shape[-1]), input_shape[2]) # TODO: Fix this
+        visual_attention_mask = jnp.ones(input_shape[2])  # TODO: Fix this
+        visual_token_type_ids = jnp.ones(input_shape[2])  # TODO: Fix this
+        visual_position_ids = jnp.broadcast_to(
+            jnp.zeros(jnp.atleast_2d(input_ids).shape[-1]), input_shape[2]
+        )  # TODO: Fix this
 
         params_rng, dropout_rng = jax.random.split(rng)
         rngs = {"params": params_rng, "dropout": dropout_rng}
 
-        return self.module.init(rngs, input_ids, attention_mask, token_type_ids, position_ids, pixel_values,
-        visual_attention_mask,
-        visual_token_type_ids, 
-        visual_position_ids, return_dict=False)[
-            "params"
-        ]
+        return self.module.init(
+            rngs,
+            input_ids,
+            attention_mask,
+            token_type_ids,
+            position_ids,
+            pixel_values,
+            visual_attention_mask,
+            visual_token_type_ids,
+            visual_position_ids,
+            return_dict=False,
+        )["params"]
 
     def __call__(
         self,
@@ -183,7 +260,7 @@ class FlaxViTBertModel(FlaxPreTrainedModel):
         position_ids=None,
         pixel_values=None,
         visual_attention_mask=None,
-        visual_token_type_ids=None, 
+        visual_token_type_ids=None,
         visual_position_ids=None,
         params: dict = None,
         dropout_rng: jax.random.PRNGKey = None,
@@ -192,12 +269,21 @@ class FlaxViTBertModel(FlaxPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ):
-        output_attentions = output_attentions if output_attentions is not None else self.config.bert_config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.bert_config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.bert_config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.bert_config.return_dict
-
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.bert_config.output_hidden_states
+        )
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.bert_config.return_dict
+        )
 
         pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1))
 
@@ -206,19 +292,23 @@ class FlaxViTBertModel(FlaxPreTrainedModel):
             token_type_ids = jnp.zeros_like(input_ids)
 
         if position_ids is None:
-            position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), input_ids.shape)
+            position_ids = jnp.broadcast_to(
+                jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), input_ids.shape
+            )
 
         if attention_mask is None:
             attention_mask = jnp.ones_like(input_ids)
 
         if visual_token_type_ids is None:
-            visual_token_type_ids = jnp.ones(input_ids.shape) # TODO: Fix this.
+            visual_token_type_ids = jnp.ones(input_ids.shape)  # TODO: Fix this.
 
         if visual_position_ids is None:
-            visual_position_ids = jnp.broadcast_to(jnp.atleast_2d(input_ids).shape[-1],input_ids.shape) # TODO: Fix this.
+            visual_position_ids = jnp.broadcast_to(
+                jnp.atleast_2d(input_ids).shape[-1], input_ids.shape
+            )  # TODO: Fix this.
 
         if visual_attention_mask is None:
-            visual_attention_mask = jnp.ones(input_ids.shape) # TODO: Fix this.
+            visual_attention_mask = jnp.ones(input_ids.shape)  # TODO: Fix this.
 
         # Handle any PRNG if needed
         rngs = {}
@@ -252,11 +342,15 @@ class FlaxViTBertModel(FlaxPreTrainedModel):
     ) -> FlaxPreTrainedModel:
 
         kwargs_bert = {
-            argument[len("bert_") :]: value for argument, value in kwargs.items() if argument.startswith("text_")
+            argument[len("bert_") :]: value
+            for argument, value in kwargs.items()
+            if argument.startswith("text_")
         }
 
         kwargs_vit = {
-            argument[len("vit_") :]: value for argument, value in kwargs.items() if argument.startswith("vision_")
+            argument[len("vit_") :]: value
+            for argument, value in kwargs.items()
+            if argument.startswith("vision_")
         }
 
         # remove text, vision kwargs from kwargs
@@ -296,11 +390,15 @@ class FlaxViTBertModel(FlaxPreTrainedModel):
                 vit_config = ViTConfig.from_pretrained(vit_model_name_or_path)
                 kwargs_vit["config"] = vit_config
 
-            vit_model = FlaxViTModel.from_pretrained(vit_model_name_or_path, *model_args, **kwargs_vit)
+            vit_model = FlaxViTModel.from_pretrained(
+                vit_model_name_or_path, *model_args, **kwargs_vit
+            )
 
         # instantiate config with corresponding kwargs
         dtype = kwargs.pop("dtype", jnp.float32)
-        config = ViTBertConfig.from_bert_vit_configs(bert_model.config, vit_model.config, **kwargs)
+        config = ViTBertConfig.from_bert_vit_configs(
+            bert_model.config, vit_model.config, **kwargs
+        )
 
         # init model
         model = cls(config, *model_args, dtype=dtype, **kwargs)
@@ -314,17 +412,21 @@ class FlaxViTBertModel(FlaxPreTrainedModel):
                     model.params[key][sub_key] = bert_model.params[key][sub_key]
 
         return model
-      
+
+
 # Usage
 # >>> flax_model = FlaxViTBertModel.from_bert_vit_pretrained('bert-base-uncased', 'google/vit-base-patch16-224-in21k', seed=0, dtype=jnp.float32)
 # >>> outputs = flax_model(input_ids, attention_mask,token_type_ids, position_ids, pixel_values, visual_attention_mask, visual_token_type_ids, visual_position_ids, output_hidden_states=True)
+
 
 class FlaxViTBertForMaskedLMModule(nn.Module):
     config: ViTBertConfig
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
-        self.model = FlaxViTBertModule(config=self.config, add_pooling_layer=False, dtype=self.dtype)
+        self.model = FlaxViTBertModule(
+            config=self.config, add_pooling_layer=False, dtype=self.dtype
+        )
         self.cls = FlaxBertOnlyMLMHead(config=self.config.bert_config, dtype=self.dtype)
 
     def __call__(
@@ -335,7 +437,7 @@ class FlaxViTBertForMaskedLMModule(nn.Module):
         position_ids,
         pixel_values,
         visual_attention_mask,
-        visual_token_type_ids, 
+        visual_token_type_ids,
         visual_position_ids,
         deterministic: bool = True,
         output_attentions: bool = False,
@@ -345,23 +447,25 @@ class FlaxViTBertForMaskedLMModule(nn.Module):
 
         # Model
         outputs = self.model(
-                input_ids,
-                attention_mask,
-                token_type_ids,
-                position_ids,
-                pixel_values,
-                visual_attention_mask,
-                visual_token_type_ids, 
-                visual_position_ids,
-                deterministic=deterministic,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
+            input_ids,
+            attention_mask,
+            token_type_ids,
+            position_ids,
+            pixel_values,
+            visual_attention_mask,
+            visual_token_type_ids,
+            visual_position_ids,
+            deterministic=deterministic,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
 
         hidden_states = outputs[0]
         if self.config.bert_config.tie_word_embeddings:
-            shared_embedding = self.model.variables["params"]["embeddings"]["word_embeddings"]["embedding"]
+            shared_embedding = self.model.variables["params"]["embeddings"][
+                "word_embeddings"
+            ]["embedding"]
         else:
             shared_embedding = None
 
@@ -377,42 +481,68 @@ class FlaxViTBertForMaskedLMModule(nn.Module):
             attentions=outputs.attentions,
         )
 
+
 class FlaxViTBertForMaskedLM(FlaxPreTrainedModel):
     config_class: ViTBertConfig
     module_class = FlaxViTBertForMaskedLMModule
-    
+
     def __init__(
-        self, config: ViTBertConfig, input_shape: Tuple = None, seed: int = 0, dtype: jnp.dtype = jnp.float32, **kwargs
+        self,
+        config: ViTBertConfig,
+        input_shape: Tuple = None,
+        seed: int = 0,
+        dtype: jnp.dtype = jnp.float32,
+        **kwargs,
     ):
 
         if input_shape is None:
-            input_shape = ((1, 1), (1, config.vit_config.image_size, config.vit_config.image_size, 3), (1, 197))
+            input_shape = (
+                (1, 1),
+                (1, config.vit_config.image_size, config.vit_config.image_size, 3),
+                (
+                    1,
+                    (config.vit_config.image_size // config.vit_config.patch_size) ** 2
+                    + 1,
+                ),
+            )
 
         module = self.module_class(config=config, dtype=dtype, **kwargs)
-        super().__init__(config, module, input_shape=input_shape, seed=seed, dtype=dtype)
+        super().__init__(
+            config, module, input_shape=input_shape, seed=seed, dtype=dtype
+        )
 
     def init_weights(self, rng: jax.random.PRNGKey, input_shape: Tuple) -> FrozenDict:
         # init input tensors
         textual_input_shape = input_shape[0]
         input_ids = jnp.zeros(textual_input_shape, dtype="i4")
         token_type_ids = jnp.zeros_like(input_ids)
-        position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), textual_input_shape)
+        position_ids = jnp.broadcast_to(
+            jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), textual_input_shape
+        )
         attention_mask = jnp.ones_like(input_ids)
 
         pixel_values = jax.random.normal(rng, input_shape[1])
-        visual_attention_mask = jnp.ones(input_shape[2]) # TODO: Fix this
-        visual_token_type_ids = jnp.ones(input_shape[2]) # TODO: Fix this
-        visual_position_ids = jnp.broadcast_to(jnp.zeros(jnp.atleast_2d(input_ids).shape[-1]), input_shape[2]) # TODO: Fix this
+        visual_attention_mask = jnp.ones(input_shape[2])  # TODO: Fix this
+        visual_token_type_ids = jnp.ones(input_shape[2])  # TODO: Fix this
+        visual_position_ids = jnp.broadcast_to(
+            jnp.zeros(jnp.atleast_2d(input_ids).shape[-1]), input_shape[2]
+        )  # TODO: Fix this
 
         params_rng, dropout_rng = jax.random.split(rng)
         rngs = {"params": params_rng, "dropout": dropout_rng}
 
-        return self.module.init(rngs, input_ids, attention_mask, token_type_ids, position_ids, pixel_values,
-        visual_attention_mask,
-        visual_token_type_ids, 
-        visual_position_ids, return_dict=False)[
-            "params"
-        ]
+        return self.module.init(
+            rngs,
+            input_ids,
+            attention_mask,
+            token_type_ids,
+            position_ids,
+            pixel_values,
+            visual_attention_mask,
+            visual_token_type_ids,
+            visual_position_ids,
+            return_dict=False,
+        )["params"]
 
     def __call__(
         self,
@@ -422,7 +552,7 @@ class FlaxViTBertForMaskedLM(FlaxPreTrainedModel):
         position_ids=None,
         pixel_values=None,
         visual_attention_mask=None,
-        visual_token_type_ids=None, 
+        visual_token_type_ids=None,
         visual_position_ids=None,
         params: dict = None,
         dropout_rng: jax.random.PRNGKey = None,
@@ -431,12 +561,21 @@ class FlaxViTBertForMaskedLM(FlaxPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ):
-        output_attentions = output_attentions if output_attentions is not None else self.config.bert_config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.bert_config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.bert_config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.bert_config.return_dict
-
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.bert_config.output_hidden_states
+        )
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.bert_config.return_dict
+        )
 
         pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1))
 
@@ -445,19 +584,23 @@ class FlaxViTBertForMaskedLM(FlaxPreTrainedModel):
             token_type_ids = jnp.zeros_like(input_ids)
 
         if position_ids is None:
-            position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), input_ids.shape)
+            position_ids = jnp.broadcast_to(
+                jnp.arange(jnp.atleast_2d(input_ids).shape[-1]), input_ids.shape
+            )
 
         if attention_mask is None:
             attention_mask = jnp.ones_like(input_ids)
 
         if visual_token_type_ids is None:
-            visual_token_type_ids = jnp.ones((1,197)) # TODO: Fix this.
+            visual_token_type_ids = jnp.ones((1, 197))  # TODO: Fix this.
 
         if visual_position_ids is None:
-            visual_position_ids = jnp.broadcast_to(jnp.atleast_2d(jnp.ones((1,197))).shape[-1],(1,197)) # TODO: Fix this.
+            visual_position_ids = jnp.broadcast_to(
+                jnp.atleast_2d(jnp.ones((1, 197))).shape[-1], (1, 197)
+            )  # TODO: Fix this.
 
         if visual_attention_mask is None:
-            visual_attention_mask = jnp.ones((1,197)) # TODO: Fix this.
+            visual_attention_mask = jnp.ones((1, 197))  # TODO: Fix this.
 
         # Handle any PRNG if needed
         rngs = {}
@@ -491,11 +634,15 @@ class FlaxViTBertForMaskedLM(FlaxPreTrainedModel):
     ) -> FlaxPreTrainedModel:
 
         kwargs_bert = {
-            argument[len("bert_") :]: value for argument, value in kwargs.items() if argument.startswith("text_")
+            argument[len("bert_") :]: value
+            for argument, value in kwargs.items()
+            if argument.startswith("text_")
         }
 
         kwargs_vit = {
-            argument[len("vit_") :]: value for argument, value in kwargs.items() if argument.startswith("vision_")
+            argument[len("vit_") :]: value
+            for argument, value in kwargs.items()
+            if argument.startswith("vision_")
         }
 
         # remove text, vision kwargs from kwargs
@@ -535,25 +682,29 @@ class FlaxViTBertForMaskedLM(FlaxPreTrainedModel):
                 vit_config = ViTConfig.from_pretrained(vit_model_name_or_path)
                 kwargs_vit["config"] = vit_config
 
-            vit_model = FlaxViTModel.from_pretrained(vit_model_name_or_path, *model_args, **kwargs_vit)
+            vit_model = FlaxViTModel.from_pretrained(
+                vit_model_name_or_path, *model_args, **kwargs_vit
+            )
 
         # instantiate config with corresponding kwargs
         dtype = kwargs.pop("dtype", jnp.float32)
-        config = ViTBertConfig.from_bert_vit_configs(bert_model.config, vit_model.config, **kwargs)
+        config = ViTBertConfig.from_bert_vit_configs(
+            bert_model.config, vit_model.config, **kwargs
+        )
 
         # init model
         model = cls(config, *model_args, dtype=dtype, **kwargs)
 
-
-
-        model.params['cls'] = bert_model.params['cls']
+        model.params["cls"] = bert_model.params["cls"]
         for key in model.params["model"].keys():
             if key != "embeddings":
-                model.params['model'][key] = bert_model.params['bert'][key]
+                model.params["model"][key] = bert_model.params["bert"][key]
             else:
-                model.params['model']["embeddings"]["vit_module"] = vit_model.params
-                for sub_key in bert_model.params['bert'][key]:
-                    model.params['model'][key][sub_key] = bert_model.params['bert'][key][sub_key]
+                model.params["model"]["embeddings"]["vit_module"] = vit_model.params
+                for sub_key in bert_model.params["bert"][key]:
+                    model.params["model"][key][sub_key] = bert_model.params["bert"][
+                        key
+                    ][sub_key]
 
         return model
 

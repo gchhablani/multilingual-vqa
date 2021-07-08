@@ -1,8 +1,8 @@
 import copy
+
+from transformers import BertConfig, ViTConfig
 from transformers.configuration_utils import PretrainedConfig
 from transformers.utils import logging
-from transformers import BertConfig, ViTConfig
-
 
 logger = logging.get_logger(__name__)
 
@@ -25,8 +25,14 @@ class ViTBertConfig(PretrainedConfig):
         self.vit_config = ViTConfig(**vit_config_dict)
 
     @classmethod
-    def from_bert_vit_configs(cls, bert_config: PretrainedConfig, vit_config: PretrainedConfig, **kwargs):
-        return cls(bert_config_dict=bert_config.to_dict(), vit_config_dict=vit_config.to_dict(), **kwargs)
+    def from_bert_vit_configs(
+        cls, bert_config: PretrainedConfig, vit_config: PretrainedConfig, **kwargs
+    ):
+        return cls(
+            bert_config_dict=bert_config.to_dict(),
+            vit_config_dict=vit_config.to_dict(),
+            **kwargs
+        )
 
     def to_dict(self):
         output = copy.deepcopy(self.__dict__)
