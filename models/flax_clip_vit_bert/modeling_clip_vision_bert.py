@@ -296,7 +296,7 @@ class FlaxCLIPVisionBertModel(FlaxPreTrainedModel):
             else self.config.bert_config.return_dict
         )
 
-        pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1))
+        # pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1)) # Don't need this for torch permuted input
 
         # init input tensors if not passed
         if token_type_ids is None:
@@ -600,7 +600,7 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
             else self.config.bert_config.return_dict
         )
 
-        pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1))
+        # pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1))
 
         # init input tensors if not passed
         if token_type_ids is None:
