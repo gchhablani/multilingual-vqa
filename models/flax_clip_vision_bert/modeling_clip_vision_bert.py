@@ -241,11 +241,11 @@ class FlaxCLIPVisionBertModel(FlaxPreTrainedModel):
         attention_mask = jnp.ones_like(input_ids)
 
         pixel_values = jax.random.normal(rng, input_shape[1])
-        visual_attention_mask = jnp.ones(input_shape[2])  # TODO: Fix this
-        visual_token_type_ids = jnp.ones(input_shape[2])  # TODO: Fix this
+        visual_attention_mask = jnp.ones(input_shape[2])
+        visual_token_type_ids = jnp.ones(input_shape[2])
         visual_position_ids = jnp.broadcast_to(
-            jnp.zeros(jnp.atleast_2d(input_ids).shape[-1]), input_shape[2]
-        )  # TODO: Fix this
+            jnp.zeros(jnp.atleast_2d(visual_token_type_ids).shape[-1]), input_shape[2]
+        )
 
         params_rng, dropout_rng = jax.random.split(rng)
         rngs = {"params": params_rng, "dropout": dropout_rng}
@@ -298,6 +298,16 @@ class FlaxCLIPVisionBertModel(FlaxPreTrainedModel):
 
         # pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1)) # Don't need this for torch permuted input
 
+
+        visual_sequence_length = (
+                    1,
+                    (
+                       self.config.clip_vision_config.image_size
+                        // self.config.clip_vision_config.patch_size
+                    )
+                    ** 2
+                    + 1,
+        )
         # init input tensors if not passed
         if token_type_ids is None:
             token_type_ids = jnp.zeros_like(input_ids)
@@ -311,15 +321,15 @@ class FlaxCLIPVisionBertModel(FlaxPreTrainedModel):
             attention_mask = jnp.ones_like(input_ids)
 
         if visual_token_type_ids is None:
-            visual_token_type_ids = jnp.ones(input_ids.shape)  # TODO: Fix this.
+            visual_token_type_ids = jnp.ones(visual_sequence_length)
 
         if visual_position_ids is None:
             visual_position_ids = jnp.broadcast_to(
-                jnp.atleast_2d(input_ids).shape[-1], input_ids.shape
-            )  # TODO: Fix this.
+                jnp.atleast_2d(visual_token_type_ids).shape[-1], visual_sequence_length
+            )
 
         if visual_attention_mask is None:
-            visual_attention_mask = jnp.ones(input_ids.shape)  # TODO: Fix this.
+            visual_attention_mask = jnp.ones(visual_sequence_length)
 
         # Handle any PRNG if needed
         rngs = {}
@@ -545,11 +555,11 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
         attention_mask = jnp.ones_like(input_ids)
 
         pixel_values = jax.random.normal(rng, input_shape[1])
-        visual_attention_mask = jnp.ones(input_shape[2])  # TODO: Fix this
-        visual_token_type_ids = jnp.ones(input_shape[2])  # TODO: Fix this
+        visual_attention_mask = jnp.ones(input_shape[2])
+        visual_token_type_ids = jnp.ones(input_shape[2])
         visual_position_ids = jnp.broadcast_to(
-            jnp.zeros(jnp.atleast_2d(input_ids).shape[-1]), input_shape[2]
-        )  # TODO: Fix this
+            jnp.zeros(jnp.atleast_2d(visual_token_type_ids).shape[-1]), input_shape[2]
+        )
 
         params_rng, dropout_rng = jax.random.split(rng)
         rngs = {"params": params_rng, "dropout": dropout_rng}
@@ -625,7 +635,7 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
                     ** 2
                     + 1,
                 )
-            )  # TODO: Fix this.
+            )
 
         if visual_position_ids is None:
             visual_position_ids = jnp.broadcast_to(
@@ -651,7 +661,7 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
                     ** 2
                     + 1,
                 ),
-            )  # TODO: Fix this.
+            )
 
         if visual_attention_mask is None:
             visual_attention_mask = jnp.ones(
@@ -664,7 +674,7 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
                     ** 2
                     + 1,
                 )
-            )  # TODO: Fix this.
+            )
 
         # Handle any PRNG if needed
         rngs = {}
