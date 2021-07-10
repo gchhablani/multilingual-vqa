@@ -11,7 +11,6 @@ class CLIPVisionBertConfig(PretrainedConfig):
 
     model_type = "clip-vision-bert"
     is_composition = True
-    
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -22,16 +21,19 @@ class CLIPVisionBertConfig(PretrainedConfig):
         if "clip_vision_config" not in kwargs:
             raise ValueError("`clip_vision_config` can not be `None`.")
 
-        bert_config = kwargs.pop('bert_config')
-        clip_vision_config = kwargs.pop('clip_vision_config')
+        bert_config = kwargs.pop("bert_config")
+        clip_vision_config = kwargs.pop("clip_vision_config")
 
         self.bert_config = BertConfig(**bert_config)
 
         self.clip_vision_config = CLIPVisionConfig(**clip_vision_config)
-        
+
     @classmethod
     def from_clip_vision_bert_configs(
-        cls, clip_vision_config: PretrainedConfig, bert_config: PretrainedConfig, **kwargs
+        cls,
+        clip_vision_config: PretrainedConfig,
+        bert_config: PretrainedConfig,
+        **kwargs
     ):
         return cls(
             clip_vision_config=clip_vision_config.to_dict(),

@@ -336,7 +336,7 @@ def main():
         model_args.vision_model_name_or_path,
         seed=training_args.seed,
         dtype=getattr(jnp, model_args.dtype),
-`       text_from_pt=model_args.from_pt,
+        text_from_pt=model_args.from_pt,
         vision_from_pt=model_args.from_pt
     )
     config = model.config

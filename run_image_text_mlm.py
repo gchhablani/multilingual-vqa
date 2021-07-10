@@ -52,8 +52,12 @@ from transformers import (
     set_seed,
 )
 
-from models.flax_clip_vision_bert.configuration_clip_vision_bert import CLIPVisionBertConfig
-from models.flax_clip_vision_bert.modeling_clip_vision_bert import FlaxCLIPVisionBertForMaskedLM
+from models.flax_clip_vision_bert.configuration_clip_vision_bert import (
+    CLIPVisionBertConfig,
+)
+from models.flax_clip_vision_bert.modeling_clip_vision_bert import (
+    FlaxCLIPVisionBertForMaskedLM,
+)
 
 
 # Args
@@ -64,28 +68,32 @@ class ModelArguments:
     """
 
     clip_vision_name_or_path: Optional[str] = field(
-        default='openai/clip-vit-base-patch32',
-        metadata={
-            "help": "The bert model checkpoint for weights initialization."
-        },
+        default="openai/clip-vit-base-patch32",
+        metadata={"help": "The bert model checkpoint for weights initialization."},
     )
 
     bert_name_or_path: Optional[str] = field(
-        default='bert-base-multilingual-uncased',
-        metadata={
-            "help": "The bert model checkpoint for weights initialization."
-        },
+        default="bert-base-multilingual-uncased",
+        metadata={"help": "The bert model checkpoint for weights initialization."},
     )
 
     bert_tokenizer_name: Optional[str] = field(
-        default='bert-base-multilingual-uncased', metadata={"help": "Pretrained BERT tokenizer name or path if not the same as model_name"}
+        default="bert-base-multilingual-uncased",
+        metadata={
+            "help": "Pretrained BERT tokenizer name or path if not the same as model_name"
+        },
     )
     cache_dir: Optional[str] = field(
-        default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
+        default=None,
+        metadata={
+            "help": "Where do you want to store the pretrained models downloaded from s3"
+        },
     )
     use_fast_tokenizer: bool = field(
         default=True,
-        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+        metadata={
+            "help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."
+        },
     )
     dtype: Optional[str] = field(
         default="float32",
@@ -101,16 +109,19 @@ class DataTrainingArguments:
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
 
-    data_dir: Optional[str] = field(default='./images/', metadata={"help": "The data directory containing input files."})
+    data_dir: Optional[str] = field(
+        default="./images/",
+        metadata={"help": "The data directory containing input files."},
+    )
     train_file: Optional[str] = field(
-        default='train.tsv', metadata={"help": "The input training data file (a tsv file)."}
+        default="train.tsv",
+        metadata={"help": "The input training data file (a tsv file)."},
     )
     validation_file: Optional[str] = field(
-        default='test.tsv',
+        default="test.tsv",
         metadata={"help": "An optional input evaluation data file (a tsv file)."},
     )
     # image_size: Optional[int] = field(default=224, metadata={"help": " The size (resolution) of each image."}) # TODO: Check
-
 
     max_train_samples: Optional[int] = field(
         default=None,
@@ -128,7 +139,8 @@ class DataTrainingArguments:
     )
 
     overwrite_cache: bool = field(
-        default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
+        default=False,
+        metadata={"help": "Overwrite the cached training and evaluation sets"},
     )
 
     max_seq_length: Optional[int] = field(
@@ -144,7 +156,8 @@ class DataTrainingArguments:
     )
 
     mlm_probability: float = field(
-        default=0.15, metadata={"help": "Ratio of tokens to mask for masked language modeling loss"}
+        default=0.15,
+        metadata={"help": "Ratio of tokens to mask for masked language modeling loss"},
     )
     # pad_to_max_length: bool = field(
     #     default=True,
@@ -165,6 +178,7 @@ class DataTrainingArguments:
                 extension = self.validation_file.split(".")[-1]
                 assert extension == "tsv", "`validation_file` should be a tsv."
 
+
 # Transform
 
 # We use torchvision for faster image pre-processing.
@@ -176,7 +190,10 @@ class Transform(torch.nn.Module):
             Resize([image_size], interpolation=InterpolationMode.BICUBIC),
             CenterCrop(image_size),
             ConvertImageDtype(torch.float),
-            Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+            Normalize(
+                (0.48145466, 0.4578275, 0.40821073),
+                (0.26862954, 0.26130258, 0.27577711),
+            ),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -185,8 +202,8 @@ class Transform(torch.nn.Module):
         return x
 
 
-
 # ImageTextDataset
+
 
 class ImageTextDataset(VisionDataset):
     """
@@ -216,16 +233,15 @@ class ImageTextDataset(VisionDataset):
     ):
         super().__init__(root, transforms, transform, target_transform)
 
-        examples = pd.read_csv(file_path, sep='\t')
+        examples = pd.read_csv(file_path, sep="\t")
 
         print(examples.columns)
         self.image_paths = examples["image_file"].values
         self.captions = examples["caption"].values
-        
 
     def _load_image(self, idx: int):
         path = self.image_paths[idx]
-        return read_image(os.path.join(self.root,path), mode=ImageReadMode.RGB)
+        return read_image(os.path.join(self.root, path), mode=ImageReadMode.RGB)
 
     def _load_target(self, idx):
         return self.captions[idx]
@@ -242,7 +258,9 @@ class ImageTextDataset(VisionDataset):
     def __len__(self) -> int:
         return len(self.captions)
 
+
 # Data Collator
+
 
 @flax.struct.dataclass
 class FlaxDataCollatorForImageLanguageModeling:
@@ -276,18 +294,26 @@ class FlaxDataCollatorForImageLanguageModeling:
 
     def __call__(self, examples) -> Dict[str, np.ndarray]:
 
-        pixel_values = torch.stack([example[0] for example in examples]).permute(0, 2, 3, 1).numpy()
+        pixel_values = (
+            torch.stack([example[0] for example in examples])
+            .permute(0, 2, 3, 1)
+            .numpy()
+        )
         captions = [example[1] for example in examples]
         # Handle dict or lists with proper padding and conversion to tensor.
-        batch = self.tokenizer(captions, return_special_tokens_mask=True, return_tensors=TensorType.NUMPY) # TODO: Check if truncation is needed.
+        batch = self.tokenizer(
+            captions, return_special_tokens_mask=True, return_tensors=TensorType.NUMPY
+        )  # TODO: Check if truncation is needed.
 
         # If special token mask has been preprocessed, pop it from the dict.
-        special_tokens_mask = batch.pop("special_tokens_mask", None) # TODO: Check how to get `special_tokens-mask`
+        special_tokens_mask = batch.pop(
+            "special_tokens_mask", None
+        )  # TODO: Check how to get `special_tokens-mask`
 
         batch["input_ids"], batch["labels"] = self.mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
-        batch["pixel_values"]=pixel_values
+        batch["pixel_values"] = pixel_values
         return batch
 
     def mask_tokens(
@@ -306,14 +332,23 @@ class FlaxDataCollatorForImageLanguageModeling:
         labels[~masked_indices] = -100  # We only compute loss on masked tokens
 
         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = np.random.binomial(1, np.full(labels.shape, 0.8)).astype("bool") & masked_indices
-        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
+        indices_replaced = (
+            np.random.binomial(1, np.full(labels.shape, 0.8)).astype("bool")
+            & masked_indices
+        )
+        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(
+            self.tokenizer.mask_token
+        )
 
         # 10% of the time, we replace masked input tokens with random word
-        indices_random = np.random.binomial(1, np.full(labels.shape, 0.5)).astype("bool")
+        indices_random = np.random.binomial(1, np.full(labels.shape, 0.5)).astype(
+            "bool"
+        )
         indices_random &= masked_indices & ~indices_replaced
 
-        random_words = np.random.randint(self.tokenizer.vocab_size, size=labels.shape, dtype="i4")
+        random_words = np.random.randint(
+            self.tokenizer.vocab_size, size=labels.shape, dtype="i4"
+        )
         inputs[indices_random] = random_words[indices_random]
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
@@ -322,14 +357,18 @@ class FlaxDataCollatorForImageLanguageModeling:
 
 # Train State
 
+
 class TrainState(train_state.TrainState):
     dropout_rng: jnp.ndarray
 
     def replicate(self):
-        return jax_utils.replicate(self).replace(dropout_rng=shard_prng_key(self.dropout_rng))
+        return jax_utils.replicate(self).replace(
+            dropout_rng=shard_prng_key(self.dropout_rng)
+        )
 
 
 # Helper Methods
+
 
 def write_train_metric(summary_writer, train_metrics, train_time, step):
     summary_writer.scalar("train_time", train_time, step)
@@ -347,28 +386,44 @@ def write_eval_metric(summary_writer, eval_metrics, step):
 
 
 def create_learning_rate_fn(
-    train_ds_size: int, train_batch_size: int, num_train_epochs: int, num_warmup_steps: int, learning_rate: float
+    train_ds_size: int,
+    train_batch_size: int,
+    num_train_epochs: int,
+    num_warmup_steps: int,
+    learning_rate: float,
 ) -> Callable[[int], jnp.array]:
     """Returns a linear warmup, linear_decay learning rate function."""
     steps_per_epoch = train_ds_size // train_batch_size
     num_train_steps = steps_per_epoch * num_train_epochs
-    warmup_fn = optax.linear_schedule(init_value=0.0, end_value=learning_rate, transition_steps=num_warmup_steps)
-    decay_fn = optax.linear_schedule(
-        init_value=learning_rate, end_value=0, transition_steps=num_train_steps - num_warmup_steps
+    warmup_fn = optax.linear_schedule(
+        init_value=0.0, end_value=learning_rate, transition_steps=num_warmup_steps
     )
-    schedule_fn = optax.join_schedules(schedules=[warmup_fn, decay_fn], boundaries=[num_warmup_steps])
+    decay_fn = optax.linear_schedule(
+        init_value=learning_rate,
+        end_value=0,
+        transition_steps=num_train_steps - num_warmup_steps,
+    )
+    schedule_fn = optax.join_schedules(
+        schedules=[warmup_fn, decay_fn], boundaries=[num_warmup_steps]
+    )
     return schedule_fn
+
 
 # Main
 
+
 def main():
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser(
+        (ModelArguments, DataTrainingArguments, TrainingArguments)
+    )
     # if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
     #     # If we pass only one argument to the script and it's the path to a json file,
     #     # let's parse it to get our arguments.
     #     model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     # else:
-    model_args, data_args, training_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
+    model_args, data_args, training_args, _ = parser.parse_args_into_dataclasses(
+        return_remaining_strings=True
+    )
 
     if (
         os.path.exists(training_args.output_dir)
@@ -380,7 +435,6 @@ def main():
             f"Output directory ({training_args.output_dir}) already exists and is not empty."
             "Use --overwrite_output_dir to overcome."
         )
-
 
     # TODO: Need to fix this
     # Setup logging
@@ -398,7 +452,6 @@ def main():
 
     # Set seed before initializing model.
     set_seed(training_args.seed)
-
 
     # Model
 
@@ -433,26 +486,30 @@ def main():
 
     if model_args.bert_tokenizer_name:
         tokenizer = BertTokenizerFast.from_pretrained(
-            model_args.bert_tokenizer_name, cache_dir=model_args.cache_dir, use_fast=model_args.use_fast_tokenizer
+            model_args.bert_tokenizer_name,
+            cache_dir=model_args.cache_dir,
+            use_fast=model_args.use_fast_tokenizer,
         )
     else:
         raise ValueError(
             "You are instantiating a new tokenizer from scratch. This is not supported by this script."
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
-    
+
     # Data Collator
     # This one will take care of randomly masking the tokens.
-    data_collator = FlaxDataCollatorForImageLanguageModeling(tokenizer=tokenizer, mlm_probability=data_args.mlm_probability)
-
+    data_collator = FlaxDataCollatorForImageLanguageModeling(
+        tokenizer=tokenizer, mlm_probability=data_args.mlm_probability
+    )
 
     # Store some constant
     num_epochs = int(training_args.num_train_epochs)
-    train_batch_size = int(training_args.per_device_train_batch_size) * jax.device_count()
+    train_batch_size = (
+        int(training_args.per_device_train_batch_size) * jax.device_count()
+    )
     eval_batch_size = int(training_args.per_device_eval_batch_size) * jax.device_count()
     steps_per_epoch = len(train_dataset) // train_batch_size
     total_train_steps = steps_per_epoch * num_epochs
-
 
     # Create learning rate schedule
     linear_decay_lr_schedule_fn = create_learning_rate_fn(
@@ -513,7 +570,10 @@ def main():
     # accordingly.
     def decay_mask_fn(params):
         flat_params = traverse_util.flatten_dict(params)
-        flat_mask = {path: (path[-1] != "bias" and path[-2:] != ("LayerNorm", "scale")) for path in flat_params}
+        flat_mask = {
+            path: (path[-1] != "bias" and path[-2:] != ("LayerNorm", "scale"))
+            for path in flat_params
+        }
         return traverse_util.unflatten_dict(flat_mask)
 
     # # create adam optimizer
@@ -539,7 +599,12 @@ def main():
     rng, dropout_rng = jax.random.split(rng)
 
     # Setup train state
-    state = TrainState.create(apply_fn=model.__call__, params=model.params, tx=optimizer, dropout_rng=dropout_rng)
+    state = TrainState.create(
+        apply_fn=model.__call__,
+        params=model.params,
+        tx=optimizer,
+        dropout_rng=dropout_rng,
+    )
 
     # Train Step
 
@@ -550,11 +615,16 @@ def main():
         def loss_fn(params):
             labels = batch.pop("labels")
 
-            logits = state.apply_fn(**batch, params=params, dropout_rng=dropout_rng, train=True)[0]
+            logits = state.apply_fn(
+                **batch, params=params, dropout_rng=dropout_rng, train=True
+            )[0]
 
             # compute loss, ignore padded input tokens
             label_mask = jnp.where(labels > 0, 1.0, 0.0)
-            loss = optax.softmax_cross_entropy(logits, onehot(labels, logits.shape[-1])) * label_mask
+            loss = (
+                optax.softmax_cross_entropy(logits, onehot(labels, logits.shape[-1]))
+                * label_mask
+            )
 
             # take average
             loss = loss.sum() / label_mask.sum()
@@ -567,7 +637,8 @@ def main():
         new_state = state.apply_gradients(grads=grad)
 
         metrics = jax.lax.pmean(
-            {"loss": loss, "learning_rate": linear_decay_lr_schedule_fn(state.step)}, axis_name="batch"
+            {"loss": loss, "learning_rate": linear_decay_lr_schedule_fn(state.step)},
+            axis_name="batch",
         )
 
         return new_state, metrics, new_dropout_rng
@@ -585,13 +656,20 @@ def main():
 
         # compute loss, ignore padded input tokens
         label_mask = jnp.where(labels > 0, 1.0, 0.0)
-        loss = optax.softmax_cross_entropy(logits, onehot(labels, logits.shape[-1])) * label_mask
+        loss = (
+            optax.softmax_cross_entropy(logits, onehot(labels, logits.shape[-1]))
+            * label_mask
+        )
 
         # compute accuracy
         accuracy = jnp.equal(jnp.argmax(logits, axis=-1), labels) * label_mask
 
         # summarize metrics
-        metrics = {"loss": loss.sum(), "accuracy": accuracy.sum(), "normalizer": label_mask.sum()}
+        metrics = {
+            "loss": loss.sum(),
+            "accuracy": accuracy.sum(),
+            "normalizer": label_mask.sum(),
+        }
         metrics = jax.lax.psum(metrics, axis_name="batch")
 
         return metrics
@@ -601,14 +679,17 @@ def main():
     # Replicate the train state on each device
     state = jax_utils.replicate(state)
 
-
     # Train Loop
 
     logger.info("***** Running training *****")
     logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {num_epochs}")
-    logger.info(f"  Instantaneous batch size per device = {training_args.per_device_train_batch_size}")
-    logger.info(f"  Total train batch size (w. parallel & distributed) = {train_batch_size}")
+    logger.info(
+        f"  Instantaneous batch size per device = {training_args.per_device_train_batch_size}"
+    )
+    logger.info(
+        f"  Total train batch size (w. parallel & distributed) = {train_batch_size}"
+    )
     logger.info(f"  Total optimization steps = {total_train_steps}")
 
     train_time = 0
@@ -625,7 +706,9 @@ def main():
         num_train_samples = len(train_dataset)
 
         # Gather the indexes for creating the batch and do a training step
-        for step, batch in enumerate(tqdm(train_loader, desc="Training...", position=1)):
+        for step, batch in enumerate(
+            tqdm(train_loader, desc="Training...", position=1)
+        ):
             batch = shard(batch.data)
             state, train_metric, dropout_rng = p_train_step(state, model, dropout_rng)
             train_metrics.append(train_metric)
@@ -637,13 +720,17 @@ def main():
                 train_metric = jax_utils.unreplicate(train_metric)
                 train_time += time.time() - train_start
                 if has_tensorboard and jax.process_index() == 0:
-                    write_train_metric(summary_writer, train_metrics, train_time, cur_step)
+                    write_train_metric(
+                        summary_writer, train_metrics, train_time, cur_step
+                    )
 
                 epochs.write(
                     f"Step... ({cur_step} | Loss: {train_metric['loss']}, Learning Rate: {train_metric['learning_rate']})"
                 )
 
-                train_metrics = [] # TODO: Check why is this being done? WHat is this needed for?
+                train_metrics = (
+                    []
+                )  # TODO: Check why is this being done? WHat is this needed for?
 
             if cur_step % training_args.eval_steps == 0 and cur_step > 0:
                 # ======================== Evaluating ==============================
@@ -652,7 +739,9 @@ def main():
                 # eval_batch_idx = generate_batch_splits(eval_samples_idx, eval_batch_size)
 
                 eval_metrics = []
-                for i, batch in enumerate(tqdm(eval_loader, desc="Evaluating ...", position=2)):
+                for i, batch in enumerate(
+                    tqdm(eval_loader, desc="Evaluating ...", position=2)
+                ):
 
                     # Model forward
                     batch = shard(batch.data)
@@ -682,6 +771,7 @@ def main():
                         push_to_hub=training_args.push_to_hub,
                         commit_message=f"Saving weights and logs of step {cur_step}",
                     )
+
 
 if __name__ == "__main__":
     main()

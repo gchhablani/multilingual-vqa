@@ -705,11 +705,15 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
     ) -> FlaxPreTrainedModel:
 
         kwargs_bert = {
-            argument[len("bert_") :]: value for argument, value in kwargs.items() if argument.startswith("text_")
+            argument[len("bert_") :]: value
+            for argument, value in kwargs.items()
+            if argument.startswith("text_")
         }
 
         kwargs_clip_vision = {
-            argument[len("clip_vision_") :]: value for argument, value in kwargs.items() if argument.startswith("vision_")
+            argument[len("clip_vision_") :]: value
+            for argument, value in kwargs.items()
+            if argument.startswith("vision_")
         }
 
         # remove text, vision kwargs from kwargs
@@ -746,28 +750,36 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
             if "config" not in kwargs_clip_vision:
                 from transformers import CLIPVisionConfig
 
-                clip_vision_config = CLIPVisionConfig.from_pretrained(clip_vision_model_name_or_path)
+                clip_vision_config = CLIPVisionConfig.from_pretrained(
+                    clip_vision_model_name_or_path
+                )
                 kwargs_clip_vision["config"] = clip_vision_config
 
-            clip_vision_model = FlaxCLIPVisionModel.from_pretrained(clip_vision_model_name_or_path, *model_args, **kwargs_clip_vision)
+            clip_vision_model = FlaxCLIPVisionModel.from_pretrained(
+                clip_vision_model_name_or_path, *model_args, **kwargs_clip_vision
+            )
 
         # instantiate config with corresponding kwargs
         dtype = kwargs.pop("dtype", jnp.float32)
-        config = CLIPVisionBertConfig.from_clip_vision_bert_configs(bert_model.config, clip_vision_model.config, **kwargs)
+        config = CLIPVisionBertConfig.from_clip_vision_bert_configs(
+            bert_model.config, clip_vision_model.config, **kwargs
+        )
 
         # init model
         model = cls(config, *model_args, dtype=dtype, **kwargs)
 
-
-
-        model.params['cls'] = bert_model.params['cls']
+        model.params["cls"] = bert_model.params["cls"]
         for key in model.params["model"].keys():
             if key != "embeddings":
-                model.params['model'][key] = bert_model.params['bert'][key]
+                model.params["model"][key] = bert_model.params["bert"][key]
             else:
-                model.params['model']["embeddings"]["clip_vision_module"] = clip_vision_model.params
-                for sub_key in bert_model.params['bert'][key]:
-                    model.params['model'][key][sub_key] = bert_model.params['bert'][key][sub_key]
+                model.params["model"]["embeddings"][
+                    "clip_vision_module"
+                ] = clip_vision_model.params
+                for sub_key in bert_model.params["bert"][key]:
+                    model.params["model"][key][sub_key] = bert_model.params["bert"][
+                        key
+                    ][sub_key]
 
         return model
 

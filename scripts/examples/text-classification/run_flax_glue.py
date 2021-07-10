@@ -34,7 +34,12 @@ from flax.jax_utils import replicate, unreplicate
 from flax.metrics import tensorboard
 from flax.training import train_state
 from flax.training.common_utils import get_metrics, onehot, shard
-from transformers import AutoConfig, AutoTokenizer, FlaxAutoModelForSequenceClassification, PretrainedConfig
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    FlaxAutoModelForSequenceClassification,
+    PretrainedConfig,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -58,7 +63,9 @@ task_to_keys = {
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
+    parser = argparse.ArgumentParser(
+        description="Finetune a transformers model on a text classification task"
+    )
     parser.add_argument(
         "--task_name",
         type=str,
@@ -67,10 +74,16 @@ def parse_args():
         choices=list(task_to_keys.keys()),
     )
     parser.add_argument(
-        "--train_file", type=str, default=None, help="A csv or a json file containing the training data."
+        "--train_file",
+        type=str,
+        default=None,
+        help="A csv or a json file containing the training data.",
     )
     parser.add_argument(
-        "--validation_file", type=str, default=None, help="A csv or a json file containing the validation data."
+        "--validation_file",
+        type=str,
+        default=None,
+        help="A csv or a json file containing the validation data.",
     )
     parser.add_argument(
         "--max_length",
@@ -110,8 +123,15 @@ def parse_args():
         default=5e-5,
         help="Initial learning rate (after the potential warmup period) to use.",
     )
-    parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay to use.")
-    parser.add_argument("--num_train_epochs", type=int, default=3, help="Total number of training epochs to perform.")
+    parser.add_argument(
+        "--weight_decay", type=float, default=0.0, help="Weight decay to use."
+    )
+    parser.add_argument(
+        "--num_train_epochs",
+        type=int,
+        default=3,
+        help="Total number of training epochs to perform.",
+    )
     parser.add_argument(
         "--max_train_steps",
         type=int,
@@ -119,10 +139,17 @@ def parse_args():
         help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
     )
     parser.add_argument(
-        "--num_warmup_steps", type=int, default=0, help="Number of steps for the warmup in the lr scheduler."
+        "--num_warmup_steps",
+        type=int,
+        default=0,
+        help="Number of steps for the warmup in the lr scheduler.",
     )
-    parser.add_argument("--output_dir", type=str, default=None, help="Where to store the final model.")
-    parser.add_argument("--seed", type=int, default=3, help="A seed for reproducible training.")
+    parser.add_argument(
+        "--output_dir", type=str, default=None, help="Where to store the final model."
+    )
+    parser.add_argument(
+        "--seed", type=int, default=3, help="A seed for reproducible training."
+    )
     parser.add_argument(
         "--push_to_hub",
         action="store_true",
@@ -131,15 +158,25 @@ def parse_args():
     args = parser.parse_args()
 
     # Sanity checks
-    if args.task_name is None and args.train_file is None and args.validation_file is None:
+    if (
+        args.task_name is None
+        and args.train_file is None
+        and args.validation_file is None
+    ):
         raise ValueError("Need either a task name or a training/validation file.")
     else:
         if args.train_file is not None:
             extension = args.train_file.split(".")[-1]
-            assert extension in ["csv", "json"], "`train_file` should be a csv or a json file."
+            assert extension in [
+                "csv",
+                "json",
+            ], "`train_file` should be a csv or a json file."
         if args.validation_file is not None:
             extension = args.validation_file.split(".")[-1]
-            assert extension in ["csv", "json"], "`validation_file` should be a csv or a json file."
+            assert extension in [
+                "csv",
+                "json",
+            ], "`validation_file` should be a csv or a json file."
 
     if args.output_dir is not None:
         os.makedirs(args.output_dir, exist_ok=True)
@@ -176,11 +213,19 @@ def create_train_state(
     # The mask is True for parameters that should be decayed.
     def decay_mask_fn(params):
         flat_params = traverse_util.flatten_dict(params)
-        flat_mask = {path: (path[-1] != "bias" and path[-2:] != ("LayerNorm", "scale")) for path in flat_params}
+        flat_mask = {
+            path: (path[-1] != "bias" and path[-2:] != ("LayerNorm", "scale"))
+            for path in flat_params
+        }
         return traverse_util.unflatten_dict(flat_mask)
 
     tx = optax.adamw(
-        learning_rate=learning_rate_fn, b1=0.9, b2=0.999, eps=1e-6, weight_decay=weight_decay, mask=decay_mask_fn
+        learning_rate=learning_rate_fn,
+        b1=0.9,
+        b2=0.999,
+        eps=1e-6,
+        weight_decay=weight_decay,
+        mask=decay_mask_fn,
     )
 
     if is_regression:
@@ -198,7 +243,9 @@ def create_train_state(
     else:  # Classification.
 
         def cross_entropy_loss(logits, labels):
-            xentropy = optax.softmax_cross_entropy(logits, onehot(labels, num_classes=num_labels))
+            xentropy = optax.softmax_cross_entropy(
+                logits, onehot(labels, num_classes=num_labels)
+            )
             return jnp.mean(xentropy)
 
         return TrainState.create(
@@ -211,16 +258,26 @@ def create_train_state(
 
 
 def create_learning_rate_fn(
-    train_ds_size: int, train_batch_size: int, num_train_epochs: int, num_warmup_steps: int, learning_rate: float
+    train_ds_size: int,
+    train_batch_size: int,
+    num_train_epochs: int,
+    num_warmup_steps: int,
+    learning_rate: float,
 ) -> Callable[[int], jnp.array]:
     """Returns a linear warmup, linear_decay learning rate function."""
     steps_per_epoch = train_ds_size // train_batch_size
     num_train_steps = steps_per_epoch * num_train_epochs
-    warmup_fn = optax.linear_schedule(init_value=0.0, end_value=learning_rate, transition_steps=num_warmup_steps)
-    decay_fn = optax.linear_schedule(
-        init_value=learning_rate, end_value=0, transition_steps=num_train_steps - num_warmup_steps
+    warmup_fn = optax.linear_schedule(
+        init_value=0.0, end_value=learning_rate, transition_steps=num_warmup_steps
     )
-    schedule_fn = optax.join_schedules(schedules=[warmup_fn, decay_fn], boundaries=[num_warmup_steps])
+    decay_fn = optax.linear_schedule(
+        init_value=learning_rate,
+        end_value=0,
+        transition_steps=num_train_steps - num_warmup_steps,
+    )
+    schedule_fn = optax.join_schedules(
+        schedules=[warmup_fn, decay_fn], boundaries=[num_warmup_steps]
+    )
     return schedule_fn
 
 
@@ -289,7 +346,9 @@ def main():
             data_files["train"] = args.train_file
         if args.validation_file is not None:
             data_files["validation"] = args.validation_file
-        extension = (args.train_file if args.train_file is not None else args.valid_file).split(".")[-1]
+        extension = (
+            args.train_file if args.train_file is not None else args.valid_file
+        ).split(".")[-1]
         raw_datasets = load_dataset(extension, data_files=data_files)
     # See more about loading any type of standard or custom dataset at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
@@ -304,7 +363,10 @@ def main():
             num_labels = 1
     else:
         # Trying to have good defaults here, don't hesitate to tweak to your needs.
-        is_regression = raw_datasets["train"].features["label"].dtype in ["float32", "float64"]
+        is_regression = raw_datasets["train"].features["label"].dtype in [
+            "float32",
+            "float64",
+        ]
         if is_regression:
             num_labels = 1
         else:
@@ -315,17 +377,28 @@ def main():
             num_labels = len(label_list)
 
     # Load pretrained model and tokenizer
-    config = AutoConfig.from_pretrained(args.model_name_or_path, num_labels=num_labels, finetuning_task=args.task_name)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
-    model = FlaxAutoModelForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
+    config = AutoConfig.from_pretrained(
+        args.model_name_or_path, num_labels=num_labels, finetuning_task=args.task_name
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model_name_or_path, use_fast=not args.use_slow_tokenizer
+    )
+    model = FlaxAutoModelForSequenceClassification.from_pretrained(
+        args.model_name_or_path, config=config
+    )
 
     # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key = task_to_keys[args.task_name]
     else:
         # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
-        non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
-        if "sentence1" in non_label_column_names and "sentence2" in non_label_column_names:
+        non_label_column_names = [
+            name for name in raw_datasets["train"].column_names if name != "label"
+        ]
+        if (
+            "sentence1" in non_label_column_names
+            and "sentence2" in non_label_column_names
+        ):
             sentence1_key, sentence2_key = "sentence1", "sentence2"
         else:
             if len(non_label_column_names) >= 2:
@@ -347,7 +420,9 @@ def main():
                 f"The configuration of the model provided the following label correspondence: {label_name_to_id}. "
                 "Using it!"
             )
-            label_to_id = {i: label_name_to_id[label_list[i]] for i in range(num_labels)}
+            label_to_id = {
+                i: label_name_to_id[label_list[i]] for i in range(num_labels)
+            }
         else:
             logger.warning(
                 "Your model seems to have been trained with labels, but they don't match the dataset: ",
@@ -360,9 +435,13 @@ def main():
     def preprocess_function(examples):
         # Tokenize the texts
         texts = (
-            (examples[sentence1_key],) if sentence2_key is None else (examples[sentence1_key], examples[sentence2_key])
+            (examples[sentence1_key],)
+            if sentence2_key is None
+            else (examples[sentence1_key], examples[sentence2_key])
         )
-        result = tokenizer(*texts, padding="max_length", max_length=args.max_length, truncation=True)
+        result = tokenizer(
+            *texts, padding="max_length", max_length=args.max_length, truncation=True
+        )
 
         if "label" in examples:
             if label_to_id is not None:
@@ -374,11 +453,15 @@ def main():
         return result
 
     processed_datasets = raw_datasets.map(
-        preprocess_function, batched=True, remove_columns=raw_datasets["train"].column_names
+        preprocess_function,
+        batched=True,
+        remove_columns=raw_datasets["train"].column_names,
     )
 
     train_dataset = processed_datasets["train"]
-    eval_dataset = processed_datasets["validation_matched" if args.task_name == "mnli" else "validation"]
+    eval_dataset = processed_datasets[
+        "validation_matched" if args.task_name == "mnli" else "validation"
+    ]
 
     # Log a few random samples from the training set:
     for index in random.sample(range(len(train_dataset)), 3):
@@ -408,11 +491,19 @@ def main():
     eval_batch_size = args.per_device_eval_batch_size * jax.local_device_count()
 
     learning_rate_fn = create_learning_rate_fn(
-        len(train_dataset), train_batch_size, args.num_train_epochs, args.num_warmup_steps, args.learning_rate
+        len(train_dataset),
+        train_batch_size,
+        args.num_train_epochs,
+        args.num_warmup_steps,
+        args.learning_rate,
     )
 
     state = create_train_state(
-        model, learning_rate_fn, is_regression, num_labels=num_labels, weight_decay=args.weight_decay
+        model,
+        learning_rate_fn,
+        is_regression,
+        num_labels=num_labels,
+        weight_decay=args.weight_decay,
     )
 
     # define step functions
@@ -424,7 +515,9 @@ def main():
         targets = batch.pop("labels")
 
         def loss_fn(params):
-            logits = state.apply_fn(**batch, params=params, dropout_rng=dropout_rng, train=True)[0]
+            logits = state.apply_fn(
+                **batch, params=params, dropout_rng=dropout_rng, train=True
+            )[0]
             loss = state.loss_fn(logits, targets)
             return loss
 
@@ -432,7 +525,10 @@ def main():
         loss, grad = grad_fn(state.params)
         grad = jax.lax.pmean(grad, "batch")
         new_state = state.apply_gradients(grads=grad)
-        metrics = jax.lax.pmean({"loss": loss, "learning_rate": learning_rate_fn(state.step)}, axis_name="batch")
+        metrics = jax.lax.pmean(
+            {"loss": loss, "learning_rate": learning_rate_fn(state.step)},
+            axis_name="batch",
+        )
         return new_state, metrics, new_dropout_rng
 
     p_train_step = jax.pmap(train_step, axis_name="batch", donate_argnums=(0,))
@@ -463,7 +559,9 @@ def main():
         rng, input_rng = jax.random.split(rng)
 
         # train
-        for batch in glue_train_data_collator(input_rng, train_dataset, train_batch_size):
+        for batch in glue_train_data_collator(
+            input_rng, train_dataset, train_batch_size
+        ):
             state, metrics, dropout_rngs = p_train_step(state, batch, dropout_rngs)
             train_metrics.append(metrics)
         train_time += time.time() - train_start
