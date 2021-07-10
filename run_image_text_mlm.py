@@ -670,19 +670,15 @@ def main():
     p_eval_step = jax.pmap(eval_step, "batch", donate_argnums=(0,))
 
     # Replicate the train state on each device
-    state = jax_utils.replicate(state)
+    # state = jax_utils.replicate(state)
 
     # Train Loop
 
     logger.info("***** Running training *****")
     logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {num_epochs}")
-    logger.info(
-        f"  Instantaneous batch size per device = {training_args.per_device_train_batch_size}"
-    )
-    logger.info(
-        f"  Total train batch size (w. parallel & distributed) = {train_batch_size}"
-    )
+    logger.info(f"  Instantaneous batch size per device = {training_args.per_device_train_batch_size}")
+    logger.info(f"  Total train batch size (w. parallel & distributed) = {train_batch_size}")
     logger.info(f"  Total optimization steps = {total_train_steps}")
 
     train_time = 0
@@ -698,12 +694,12 @@ def main():
         # Generate an epoch by shuffling sampling indices from the train dataset
         num_train_samples = len(train_dataset)
 
+        epochs = tqdm(range(num_epochs), desc=f"Epoch ... (1/{num_epochs})", position=0)
         # Gather the indexes for creating the batch and do a training step
-        for step, batch in enumerate(
-            tqdm(train_loader, desc="Training...", position=1)
-        ):
-            batch = shard(batch)
-            state, train_metric, dropout_rng = p_train_step(state, model, dropout_rng)
+
+        for step, batch in enumerate(train_loader):
+            # batch = shard(batch)
+            state, train_metric, dropout_rng = p_train_step(state, batch, dropout_rng)
             train_metrics.append(train_metric)
 
             cur_step = epoch * (num_train_samples // train_batch_size) + step
@@ -713,17 +709,13 @@ def main():
                 train_metric = jax_utils.unreplicate(train_metric)
                 train_time += time.time() - train_start
                 if has_tensorboard and jax.process_index() == 0:
-                    write_train_metric(
-                        summary_writer, train_metrics, train_time, cur_step
-                    )
+                    write_train_metric(summary_writer, train_metrics, train_time, cur_step)
 
                 epochs.write(
                     f"Step... ({cur_step} | Loss: {train_metric['loss']}, Learning Rate: {train_metric['learning_rate']})"
                 )
 
-                train_metrics = (
-                    []
-                )  # TODO: Check why is this being done? WHat is this needed for?
+                train_metrics = [] # TODO: Check why is this being done? WHat is this needed for?
 
             if cur_step % training_args.eval_steps == 0 and cur_step > 0:
                 # ======================== Evaluating ==============================
@@ -732,13 +724,13 @@ def main():
                 # eval_batch_idx = generate_batch_splits(eval_samples_idx, eval_batch_size)
 
                 eval_metrics = []
-                for i, batch in enumerate(
-                    tqdm(eval_loader, desc="Evaluating ...", position=2)
-                ):
+                eval_steps = len(eval_dataset) // eval_batch_size
+                eval_step_progress_bar = tqdm(total=eval_steps, desc="Evaluating...", position=2, leave=False)
+                for batch in eval_loader:
 
                     # Model forward
-                    batch = shard(batch)
-                    metrics = p_eval_step(state.params, batch)
+                    # batch = shard(batch)
+                    metrics = p_eval_step(state, batch)
                     eval_metrics.append(metrics)
 
                 # normalize eval metrics
