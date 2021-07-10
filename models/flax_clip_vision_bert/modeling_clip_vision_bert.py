@@ -762,7 +762,7 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
         # instantiate config with corresponding kwargs
         dtype = kwargs.pop("dtype", jnp.float32)
         config = CLIPVisionBertConfig.from_clip_vision_bert_configs(
-            bert_model.config, clip_vision_model.config, **kwargs
+            clip_vision_model.config, bert_model.config, **kwargs
         )
 
         # init model
