@@ -682,3 +682,6 @@ def main():
                         push_to_hub=training_args.push_to_hub,
                         commit_message=f"Saving weights and logs of step {cur_step}",
                     )
+
+if __name__ == "__main__":
+    main()
