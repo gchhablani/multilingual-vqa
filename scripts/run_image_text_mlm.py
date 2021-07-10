@@ -109,7 +109,7 @@ class DataTrainingArguments:
         default='test.tsv',
         metadata={"help": "An optional input evaluation data file (a tsv file)."},
     )
-    image_size: Optional[int] = field(default=224, metadata={"help": " The size (resolution) of each image."}) # TODO: Check
+    # image_size: Optional[int] = field(default=224, metadata={"help": " The size (resolution) of each image."}) # TODO: Check
 
 
     max_train_samples: Optional[int] = field(
