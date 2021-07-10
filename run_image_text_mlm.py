@@ -284,6 +284,8 @@ class FlaxDataCollatorForImageLanguageModeling:
 
     tokenizer: PreTrainedTokenizerBase
     mlm_probability: float = 0.15
+    vision_sequence_length: int = 50
+    max_length: int = 512
 
     def __post_init__(self):
         if self.tokenizer.mask_token is None:
@@ -294,27 +296,27 @@ class FlaxDataCollatorForImageLanguageModeling:
 
     def __call__(self, examples) -> Dict[str, np.ndarray]:
 
-        pixel_values = (
-            torch.stack([example[0] for example in examples])
-            .permute(0, 2, 3, 1)
-            .numpy()
-        )
+        pixel_values = torch.stack([example[0] for example in examples]).permute(0, 2, 3, 1).numpy()
         captions = [example[1] for example in examples]
         # Handle dict or lists with proper padding and conversion to tensor.
-        batch = self.tokenizer(
-            captions, return_special_tokens_mask=True, return_tensors=TensorType.NUMPY
-        )  # TODO: Check if truncation is needed.
+        batch = self.tokenizer(captions, return_special_tokens_mask=True,padding='max_length',max_length=self.max_length-self.vision_sequence_length, return_tensors=TensorType.NUMPY) # TODO: Check if truncation is needed.
 
         # If special token mask has been preprocessed, pop it from the dict.
-        special_tokens_mask = batch.pop(
-            "special_tokens_mask", None
-        )  # TODO: Check how to get `special_tokens-mask`
+        special_tokens_mask = batch.pop("special_tokens_mask", None) # TODO: Check how to get `special_tokens-mask`
 
         batch["input_ids"], batch["labels"] = self.mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
-        batch["pixel_values"] = pixel_values
-        return batch
+        batch["labels"] = np.concatenate((batch["labels"], np.ones((batch["labels"].shape[0], self.vision_sequence_length), np.int32)*-100), axis=1)
+
+        return {
+            "pixel_values": pixel_values,
+            "input_ids" : batch["input_ids"],
+            "attention_mask": batch["attention_mask"],
+            "token_type_ids": batch["token_type_ids"],
+            "labels": batch["labels"]
+
+        }
 
     def mask_tokens(
         self, inputs: np.ndarray, special_tokens_mask: Optional[np.ndarray]
@@ -332,23 +334,14 @@ class FlaxDataCollatorForImageLanguageModeling:
         labels[~masked_indices] = -100  # We only compute loss on masked tokens
 
         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = (
-            np.random.binomial(1, np.full(labels.shape, 0.8)).astype("bool")
-            & masked_indices
-        )
-        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(
-            self.tokenizer.mask_token
-        )
+        indices_replaced = np.random.binomial(1, np.full(labels.shape, 0.8)).astype("bool") & masked_indices
+        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
 
         # 10% of the time, we replace masked input tokens with random word
-        indices_random = np.random.binomial(1, np.full(labels.shape, 0.5)).astype(
-            "bool"
-        )
+        indices_random = np.random.binomial(1, np.full(labels.shape, 0.5)).astype("bool")
         indices_random &= masked_indices & ~indices_replaced
 
-        random_words = np.random.randint(
-            self.tokenizer.vocab_size, size=labels.shape, dtype="i4"
-        )
+        random_words = np.random.randint(self.tokenizer.vocab_size, size=labels.shape, dtype="i4")
         inputs[indices_random] = random_words[indices_random]
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
@@ -709,7 +702,7 @@ def main():
         for step, batch in enumerate(
             tqdm(train_loader, desc="Training...", position=1)
         ):
-            batch = shard(batch.data)
+            batch = shard(batch)
             state, train_metric, dropout_rng = p_train_step(state, model, dropout_rng)
             train_metrics.append(train_metric)
 
@@ -744,7 +737,7 @@ def main():
                 ):
 
                     # Model forward
-                    batch = shard(batch.data)
+                    batch = shard(batch)
                     metrics = p_eval_step(state.params, batch)
                     eval_metrics.append(metrics)
 
