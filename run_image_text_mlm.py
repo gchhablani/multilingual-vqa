@@ -698,7 +698,7 @@ def main():
         # Generate an epoch by shuffling sampling indices from the train dataset
         num_train_samples = len(train_dataset)
 
-        epochs = tqdm(range(num_epochs), desc=f"Epoch ... (1/{num_epochs})", position=0)
+        epochs = tqdm(range(num_epochs), desc=f"Epoch : (1/{num_epochs})", position=1)
         # Gather the indexes for creating the batch and do a training step
 
         for step, batch in enumerate(train_loader):
@@ -716,7 +716,7 @@ def main():
                     write_train_metric(summary_writer, train_metrics, train_time, cur_step)
 
                 epochs.write(
-                    f"Step... ({cur_step} | Loss: {train_metric['loss']}, Learning Rate: {train_metric['learning_rate']})"
+                    f"Log at Step: ({cur_step} | Loss: {train_metric['loss']}, Learning Rate: {train_metric['learning_rate']})"
                 )
 
                 train_metrics = [] # TODO: Check why is this being done? WHat is this needed for?
@@ -744,7 +744,7 @@ def main():
                 eval_metrics = jax.tree_map(lambda x: x / eval_normalizer, eval_metrics)
 
                 # Update progress bar
-                epochs.desc = f"Step... ({cur_step} | Loss: {eval_metrics['loss']}, Acc: {eval_metrics['accuracy']})"
+                epochs.desc = f"Eval at Step: ({cur_step} | Loss: {eval_metrics['loss']}, Acc: {eval_metrics['accuracy']})"
 
                 # Save metrics
                 if has_tensorboard and jax.process_index() == 0:
