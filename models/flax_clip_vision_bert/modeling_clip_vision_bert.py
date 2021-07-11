@@ -298,15 +298,14 @@ class FlaxCLIPVisionBertModel(FlaxPreTrainedModel):
 
         # pixel_values = jnp.transpose(pixel_values, (0, 2, 3, 1)) # Don't need this for torch permuted input
 
-
         visual_sequence_length = (
-                    pixel_values.shape[0],
-                    (
-                       self.config.clip_vision_config.image_size
-                        // self.config.clip_vision_config.patch_size
-                    )
-                    ** 2
-                    + 1,
+            pixel_values.shape[0],
+            (
+                self.config.clip_vision_config.image_size
+                // self.config.clip_vision_config.patch_size
+            )
+            ** 2
+            + 1,
         )
         # init input tensors if not passed
         if token_type_ids is None:
@@ -624,7 +623,6 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
         if attention_mask is None:
             attention_mask = jnp.ones_like(input_ids)
 
-
         visual_sequence_length = (
             pixel_values.shape[0],
             (
@@ -640,9 +638,7 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
 
         if visual_position_ids is None:
             visual_position_ids = jnp.broadcast_to(
-                jnp.atleast_2d(
-                    jnp.ones(visual_sequence_length)
-                ).shape[-1],
+                jnp.atleast_2d(jnp.ones(visual_sequence_length)).shape[-1],
                 (visual_sequence_length),
             )
 

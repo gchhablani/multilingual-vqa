@@ -350,13 +350,13 @@ class FlaxDataCollatorForImageLanguageModeling:
 # Train State
 
 
-class TrainState(train_state.TrainState):
-    dropout_rng: jnp.ndarray
+# class TrainState(train_state.TrainState):
+#     dropout_rng: jnp.ndarray
 
-    def replicate(self):
-        return jax_utils.replicate(self).replace(
-            dropout_rng=shard_prng_key(self.dropout_rng)
-        )
+#     def replicate(self):
+#         return jax_utils.replicate(self).replace(
+#             dropout_rng=shard_prng_key(self.dropout_rng)
+#         )
 
 
 # Helper Methods
@@ -588,14 +588,19 @@ def main():
     # State
     # Initialize our training
     rng = jax.random.PRNGKey(training_args.seed)
-    rng, dropout_rng = jax.random.split(rng)
+    dropout_rngs = jax.random.split(rng, jax.local_device_count())
 
     # Setup train state
-    state = TrainState.create(
-        apply_fn=model.__call__,
-        params=model.params,
-        tx=optimizer,
-        dropout_rng=dropout_rng,
+    # state = TrainState.create(
+    #     apply_fn=model.__call__,
+    #     params=model.params,
+    #     tx=optimizer,
+    #     dropout_rng=dropout_rng,
+    # )
+
+    # Setup train state
+    state = train_state.TrainState.create(
+        apply_fn=model.__call__, params=model.params, tx=optimizer
     )
 
     # Train Step
@@ -636,7 +641,7 @@ def main():
         return new_state, metrics, new_dropout_rng
 
     # Create parallel version of the train step
-    p_train_step = jax.pmap(train_step, "batch", donate_argnums = (0,), in_axes=(None,0, None))
+    p_train_step = jax.pmap(train_step, "batch", donate_argnums = (0,))
 
     # Eval Step
 
@@ -666,10 +671,10 @@ def main():
 
         return metrics
 
-    p_eval_step = jax.pmap(eval_step, "batch", in_axes=(None,0))
+    p_eval_step = jax.pmap(eval_step, "batch")
 
     # Replicate the train state on each device
-    # state = jax_utils.replicate(state)
+    state = jax_utils.replicate(state)
 
     # Train Loop
 
@@ -693,12 +698,12 @@ def main():
         # Generate an epoch by shuffling sampling indices from the train dataset
         num_train_samples = len(train_dataset)
 
-        epochs = tqdm(range(num_epochs), desc=f"Epoch ... (1/{num_epochs})", position=1)
+        epochs = tqdm(range(num_epochs), desc=f"Epoch ... (1/{num_epochs})", position=0)
         # Gather the indexes for creating the batch and do a training step
 
         for step, batch in enumerate(train_loader):
             batch = shard(batch)
-            state, train_metric, dropout_rng = p_train_step(state, batch, dropout_rng)
+            state, train_metric, dropout_rngs = p_train_step(state, batch, dropout_rngs)
             train_metrics.append(train_metric)
 
             cur_step = epoch * (num_train_samples // train_batch_size) + step
