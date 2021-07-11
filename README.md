@@ -6,7 +6,6 @@ Repository for Multilingual-VQA task created during HuggingFace JAX/Flax communi
 ## Usage
 
 ```sh
-./run_image_text_mlm.py --output_dir trial --data_dir /home/user/data/CC12M 
-
+./run_image_text_mlm.py --output_dir trial --data_dir /home/user/data/CC12M/images --train_file /home/user/data/CC12M/val_file.tsv --validation_file /home/user/data/CC12M/val_file.tsv
 
 ```
