@@ -626,7 +626,7 @@ def main():
         grad_fn = jax.value_and_grad(loss_fn)
         loss, grad = grad_fn(state.params)
         grad = jax.lax.pmean(grad, "batch")
-        new_state = state.apply_gradients(grads=grad, dropout_rng = new_dropout_rng)
+        new_state = state.apply_gradients(grads=grad)
 
         metrics = jax.lax.pmean(
             {"loss": loss, "learning_rate": linear_decay_lr_schedule_fn(state.step)},
@@ -693,7 +693,7 @@ def main():
         # Generate an epoch by shuffling sampling indices from the train dataset
         num_train_samples = len(train_dataset)
 
-        epochs = tqdm(range(num_epochs), desc=f"Epoch ... (1/{num_epochs})", position=0)
+        epochs = tqdm(range(num_epochs), desc=f"Epoch ... (1/{num_epochs})", position=1)
         # Gather the indexes for creating the batch and do a training step
 
         for step, batch in enumerate(train_loader):
