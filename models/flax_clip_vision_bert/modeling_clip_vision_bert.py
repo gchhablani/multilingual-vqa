@@ -300,7 +300,7 @@ class FlaxCLIPVisionBertModel(FlaxPreTrainedModel):
 
 
         visual_sequence_length = (
-                    1,
+                    pixel_values.shape[0],
                     (
                        self.config.clip_vision_config.image_size
                         // self.config.clip_vision_config.patch_size
@@ -624,57 +624,30 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
         if attention_mask is None:
             attention_mask = jnp.ones_like(input_ids)
 
-        if visual_token_type_ids is None:
-            visual_token_type_ids = jnp.ones(
-                (
-                    1,
-                    (
-                        self.config.clip_vision_config.image_size
-                        // self.config.clip_vision_config.patch_size
-                    )
-                    ** 2
-                    + 1,
-                )
+
+        visual_sequence_length = (
+            pixel_values.shape[0],
+            (
+                self.config.clip_vision_config.image_size
+                // self.config.clip_vision_config.patch_size
             )
+            ** 2
+            + 1,
+        )
+
+        if visual_token_type_ids is None:
+            visual_token_type_ids = jnp.ones(visual_sequence_length)
 
         if visual_position_ids is None:
             visual_position_ids = jnp.broadcast_to(
                 jnp.atleast_2d(
-                    jnp.ones(
-                        (
-                            1,
-                            (
-                                self.config.clip_vision_config.image_size
-                                // self.config.clip_vision_config.patch_size
-                            )
-                            ** 2
-                            + 1,
-                        )
-                    )
+                    jnp.ones(visual_sequence_length)
                 ).shape[-1],
-                (
-                    1,
-                    (
-                        self.config.clip_vision_config.image_size
-                        // self.config.clip_vision_config.patch_size
-                    )
-                    ** 2
-                    + 1,
-                ),
+                (visual_sequence_length),
             )
 
         if visual_attention_mask is None:
-            visual_attention_mask = jnp.ones(
-                (
-                    1,
-                    (
-                        self.config.clip_vision_config.image_size
-                        // self.config.clip_vision_config.patch_size
-                    )
-                    ** 2
-                    + 1,
-                )
-            )
+            visual_attention_mask = jnp.ones(visual_sequence_length)
 
         # Handle any PRNG if needed
         rngs = {}

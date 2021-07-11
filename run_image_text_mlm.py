@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 # Copyright 2021 The HuggingFace Team All rights reserved.
 #
@@ -235,7 +235,6 @@ class ImageTextDataset(VisionDataset):
 
         examples = pd.read_csv(file_path, sep="\t")
 
-        print(examples.columns)
         self.image_paths = examples["image_file"].values
         self.captions = examples["caption"].values
 
@@ -627,7 +626,7 @@ def main():
         grad_fn = jax.value_and_grad(loss_fn)
         loss, grad = grad_fn(state.params)
         grad = jax.lax.pmean(grad, "batch")
-        new_state = state.apply_gradients(grads=grad)
+        new_state = state.apply_gradients(grads=grad, dropout_rng = new_dropout_rng)
 
         metrics = jax.lax.pmean(
             {"loss": loss, "learning_rate": linear_decay_lr_schedule_fn(state.step)},
@@ -637,7 +636,7 @@ def main():
         return new_state, metrics, new_dropout_rng
 
     # Create parallel version of the train step
-    p_train_step = jax.pmap(train_step, "batch", donate_argnums=(0,))
+    p_train_step = jax.pmap(train_step, "batch", donate_argnums = (0,), in_axes=(None,0, None))
 
     # Eval Step
 
@@ -667,7 +666,7 @@ def main():
 
         return metrics
 
-    p_eval_step = jax.pmap(eval_step, "batch", donate_argnums=(0,))
+    p_eval_step = jax.pmap(eval_step, "batch", in_axes=(None,0))
 
     # Replicate the train state on each device
     # state = jax_utils.replicate(state)
@@ -698,7 +697,7 @@ def main():
         # Gather the indexes for creating the batch and do a training step
 
         for step, batch in enumerate(train_loader):
-            # batch = shard(batch)
+            batch = shard(batch)
             state, train_metric, dropout_rng = p_train_step(state, batch, dropout_rng)
             train_metrics.append(train_metric)
 
@@ -729,8 +728,8 @@ def main():
                 for batch in eval_loader:
 
                     # Model forward
-                    # batch = shard(batch)
-                    metrics = p_eval_step(state, batch)
+                    batch = shard(batch)
+                    metrics = p_eval_step(state.params, batch)
                     eval_metrics.append(metrics)
 
                 # normalize eval metrics
