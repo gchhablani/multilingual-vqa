@@ -18,22 +18,28 @@ import logging
 import os
 
 import time
+import shutil
 import pandas as pd
+import json
+import math
 from dataclasses import dataclass, field
 
 # You can also adapt this script on your own masked language modeling task. Pointers for this are left as comments.
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Callable
-
 import numpy as np
 from tqdm import tqdm
+from flax.serialization import to_bytes, from_bytes
 
 
 from torchvision.transforms.functional import InterpolationMode
 import flax
+from flax.training.checkpoints import save_checkpoint, restore_checkpoint
 from flax.training.common_utils import get_metrics, shard, shard_prng_key
 import jax
 import jax.numpy as jnp
+
+from transformers.file_utils import PushToHubMixin
 import optax
 from flax import jax_utils, traverse_util
 from flax.training import train_state
@@ -96,6 +102,12 @@ class ModelArguments:
             "help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."
         },
     )
+    # save_optimizer: bool = field(
+    #     default=True,
+    #     metadata={
+    #         "help": "Whether to save optimizer state."
+    #     },
+    # )
     dtype: Optional[str] = field(
         default="float32",
         metadata={
@@ -204,8 +216,6 @@ class Transform(torch.nn.Module):
 
 
 # ImageTextDataset
-
-
 class ImageTextDataset(VisionDataset):
     """
     Dtaset for loading image-text data for tasks like CLIP training, Image Captioning.
@@ -408,9 +418,70 @@ def create_learning_rate_fn(
     return schedule_fn
 
 
+# utils
+def mb_item(x):
+    return x.item() if hasattr(x, "item") else x
+
+#checkpoint functions
+def save_model_checkpoint(model, save_dir, state, logger, organization,  with_opt:bool=False, push_to_hub:bool=False, overwrite=False, **kwargs):
+    state = jax_utils.unreplicate(state)
+    logger.info(f"SAVING CHECKPOINT IN {save_dir}...")
+    ckpt_save_dir = f"{save_dir}/ckpt-{mb_item(state.step)-1}"
+    if os.path.exists(ckpt_save_dir) and not overwrite:
+        logger.info("checkpoint exists, skipping overwrite")
+    else:
+        model.save_pretrained(
+            ckpt_save_dir,
+            params=state.params,
+            push_to_hub=False,
+            **kwargs
+        )
+        if with_opt:
+            with open(os.path.join(ckpt_save_dir, "opt_state.msgpack"), "wb") as f:
+                f.write(to_bytes(state.opt_state))
+            with open(os.path.join(ckpt_save_dir, "training_state.json"), "w") as f:
+                json.dump({"step": state.step.item()}, f)
+
+        logger.info("checkpoint saved")
+        
+        if push_to_hub:
+            repo_name = Path(save_dir).name
+            repo_url = PushToHubMixin._get_repo_url_from_name(repo_name, organization=organization, private=False, use_auth_token=True)
+            repo = PushToHubMixin._create_or_get_repo(save_dir, repo_url = repo_url, organization=organization, use_auth_token=True)
+            commit_message=f"Saving weights and logs at step {mb_item(state.step)-1}"
+            url = PushToHubMixin._push_to_hub(repo = repo, commit_message=commit_message)
+            logger.info(f"Model pushed to the hub in this commit: {url}")
+
+
+
+def restore_model_checkpoint(save_dir, state, logger):
+    logger.info(f"RESTORING CHECKPOINT FROM {save_dir}...")
+    with open(os.path.join(save_dir, "flax_model.msgpack"), "rb") as f:
+        params = from_bytes(state.params, f.read())
+
+    with open(os.path.join(save_dir, "opt_state.msgpack"), "rb") as f:
+        opt_state = from_bytes(state.opt_state, f.read())
+
+    with open(os.path.join(save_dir, "training_state.json"), "r") as f:
+        training_state = json.load(f)
+    step = training_state["step"]
+
+    logger.info("checkpoint restored")
+    #return state.replace(step=step, params=params, opt_state=opt_state), step
+    return params, opt_state, step
+
+def rotate_checkpoints(ckpt_dir:str, save_total_limit:int, logger):
+    "Removes older checkpoints so that `save_total_limit` checkpoints are kept"
+    # TODO: what to remove is decided using step number only, we might want to improve that
+    ckpts = [str(x) for x in Path(ckpt_dir).glob("ckpt-*")]
+    # sort checkpoints by step
+    ckpts_sorted = sorted(ckpts, key=lambda x: int(x.split('-')[-1]))
+    ckpts_to_delete = ckpts_sorted[:-save_total_limit]
+    for ckpt in ckpts_to_delete:
+        logger.info(f"Deleting older checkpoint [{ckpt}] due to save_total_limit ({save_total_limit})")
+        shutil.rmtree(ckpt)
+
 # Main
-
-
 def main():
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments)
@@ -453,18 +524,20 @@ def main():
     set_seed(training_args.seed)
 
     # Model
+    if training_args.resume_from_checkpoint is None:
+        model = FlaxCLIPVisionBertForMaskedLM.from_clip_vision_bert_pretrained(
+            model_args.clip_vision_name_or_path,
+            model_args.bert_name_or_path,
+            seed=training_args.seed,
+            dtype=getattr(jnp, model_args.dtype),
+        )
+    else:
+        model = FlaxCLIPVisionBertForMaskedLM.from_pretrained(training_args.resume_from_checkpoint)
 
-    model = FlaxCLIPVisionBertForMaskedLM.from_clip_vision_bert_pretrained(
-        model_args.clip_vision_name_or_path,
-        model_args.bert_name_or_path,
-        seed=training_args.seed,
-        dtype=getattr(jnp, model_args.dtype),
-    )
 
     config = model.config
 
     # Dataset
-
     preprocess = Transform(config.clip_vision_config.image_size)
     preprocess = torch.jit.script(preprocess)
 
@@ -606,9 +679,22 @@ def main():
     # )
 
     # Setup train state
-    state = train_state.TrainState.create(
-        apply_fn=model.__call__, params=model.params, tx=optimizer
-    )
+    if training_args.resume_from_checkpoint is None:
+        state = train_state.TrainState.create(
+            apply_fn=model.__call__, params=model.params, tx=optimizer
+        )
+    else:
+        state = train_state.TrainState.create(
+            apply_fn=model.__call__, params=model.params, tx=optimizer
+        )
+        params, opt_state, step = restore_model_checkpoint(training_args.resume_from_checkpoint, state, logger)
+        state = state.replace(
+            step=step,
+            apply_fn=model.__call__,
+            params=params,
+            tx=optimizer,
+            opt_state=opt_state,
+        )
 
     # Train Step
 
@@ -691,9 +777,15 @@ def main():
     logger.info(f"  Instantaneous batch size per device = {training_args.per_device_train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel & distributed) = {train_batch_size}")
     logger.info(f"  Total optimization steps = {total_train_steps}")
+    if training_args.resume_from_checkpoint is not None:
+        previous_step = int(jax_utils.unreplicate(state.step))
+        epoch_start_point = math.ceil((previous_step*train_batch_size)/len(train_dataset))
+    else:
+        epoch_start_point = 0
 
+    break_all = False
     train_time = 0
-    epochs = tqdm(range(num_epochs), desc=f"Epoch ... (1/{num_epochs})", position=0)
+    epochs = tqdm(range(epoch_start_point, num_epochs), desc=f"Epoch ... ({epoch_start_point}/{num_epochs})", position=0)
     for epoch in epochs:
         # ======================== Training ================================
         train_start = time.time()
@@ -705,7 +797,7 @@ def main():
         # Generate an epoch by shuffling sampling indices from the train dataset
         num_train_samples = len(train_dataset)
 
-        epochs = tqdm(range(num_epochs), desc=f"Epoch : (1/{num_epochs})", position=1)
+        epochs.write(f"Epoch : ({epoch}/{num_epochs})")
         # Gather the indexes for creating the batch and do a training step
 
         for step, batch in enumerate(train_loader):
@@ -714,7 +806,7 @@ def main():
             train_metrics.append(train_metric)
 
             cur_step = epoch * (num_train_samples // train_batch_size) + step
-
+            print(cur_step)
             if cur_step % training_args.logging_steps == 0 and cur_step > 0:
                 # Save metrics
                 train_metric = jax_utils.unreplicate(train_metric)
@@ -760,13 +852,27 @@ def main():
             if cur_step % training_args.save_steps == 0 and cur_step > 0:
                 # save checkpoint after each epoch and push checkpoint to the hub
                 if jax.process_index() == 0:
-                    params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
-                    model.save_pretrained(
-                        training_args.output_dir,
-                        params=params,
-                        push_to_hub=training_args.push_to_hub,
-                        commit_message=f"Saving weights and logs of step {cur_step}",
-                    )
+                    # params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
+                    # model.save_pretrained(
+                    #     training_args.output_dir,
+                    #     params=params,
+                    #     push_to_hub=training_args.push_to_hub,
+                    #     commit_message=f"Saving weights and logs of step {cur_step}",
+                    # )
+                    save_model_checkpoint(model, training_args.output_dir, state, logger, training_args.push_to_hub_organization, with_opt=True, push_to_hub=training_args.push_to_hub, overwrite=True)
+                    # if model_args.save_optimizer:
+                    #     # this saves full state including optimizer
+                    #     save_checkpoint(training_args.output_dir, state, state.step, keep=training_args.save_total_limit, overwrite=True)
+                    if training_args.save_total_limit is not None:
+                        rotate_checkpoints(training_args.output_dir, training_args.save_total_limit, logger)
+            if cur_step==total_train_steps:
+                break_all=True
+                break
+        if break_all:
+            break
+    # save model after training is over
+    params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
+    model.save_pretrained(training_args.output_dir, params=params, push_to_hub=training_args.push_to_hub, commit_message="Add final model")
 
 
 if __name__ == "__main__":
