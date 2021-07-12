@@ -16,6 +16,7 @@
 """Script to run Image-Text Masked LM"""
 import logging
 import os
+
 import time
 import pandas as pd
 from dataclasses import dataclass, field
@@ -234,9 +235,15 @@ class ImageTextDataset(VisionDataset):
         super().__init__(root, transforms, transform, target_transform)
 
         examples = pd.read_csv(file_path, sep="\t")
-
-        self.image_paths = examples["image_file"].values
-        self.captions = examples["caption"].values
+        
+        image_paths = []
+        captions = []
+        for idx,img_file in enumerate(examples["image_file"].values):
+            if os.path.exists(os.path.join(self.root, img_file)):
+                image_paths.append(img_file)
+                captions.append(examples["caption"].values[idx])
+        self.image_paths = image_paths
+        self.captions = captions
 
     def _load_image(self, idx: int):
         path = self.image_paths[idx]
