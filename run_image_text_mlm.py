@@ -955,11 +955,11 @@ def main():
                             training_args.save_total_limit,
                             logger,
                         )
-            train_step_progress_bar.close()
             
             if cur_step == total_train_steps:
                 break_all = True
                 break
+        train_step_progress_bar.close()
         epochs.update(1)
         if break_all:
             break
