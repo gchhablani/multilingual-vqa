@@ -690,13 +690,13 @@ def main():
     # Note that this mask is specifically adapted for FlaxBERT-like models.
     # For other models, one should correct the layer norm parameter naming
     # accordingly.
-    def decay_mask_fn(params):
-        flat_params = traverse_util.flatten_dict(params)
-        flat_mask = {
-            path: (path[-1] != "bias" and path[-2:] != ("LayerNorm", "scale"))
-            for path in flat_params
-        }
-        return traverse_util.unflatten_dict(flat_mask)
+    # def decay_mask_fn(params):
+    #     flat_params = traverse_util.flatten_dict(params)
+    #     flat_mask = {
+    #         path: (path[-1] != "bias" and path[-2:] != ("LayerNorm", "scale"))
+    #         for path in flat_params
+    #     }
+    #     return traverse_util.unflatten_dict(flat_mask)
 
     # # create adam optimizer
     # if training_args.adafactor:
@@ -704,7 +704,6 @@ def main():
     #     # For more details about the parameters please check https://github.com/deepmind/optax/blob/ed02befef9bf81cbbf236be3d2b0e032e9ed4a40/optax/_src/alias.py#L74
     optimizer = optax.adafactor(
         learning_rate=linear_decay_lr_schedule_fn,
-        mask=decay_mask_fn
     )
     # else:
     # optimizer = optax.adamw(
@@ -957,11 +956,11 @@ def main():
                             logger,
                         )
             train_step_progress_bar.close()
-            epochs.update(1)
+            
             if cur_step == total_train_steps:
                 break_all = True
                 break
-
+        epochs.update(1)
         if break_all:
             break
     # save model after training is over
