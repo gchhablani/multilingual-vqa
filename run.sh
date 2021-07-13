@@ -29,7 +29,7 @@ echo "Token found $token"
  --push_to_hub_token $token\
  --per_device_train_batch_size 64\
  --per_device_eval_batch_size 64\
- --warmup_steps 2000\
+ --warmup_steps 5000\
  --learning_rate 5e-5
 
 
