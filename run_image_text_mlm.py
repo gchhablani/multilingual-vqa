@@ -14,41 +14,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Script to run Image-Text Masked LM"""
-import logging
-import os
-
-import time
-import shutil
-import pandas as pd
 import json
+import logging
 import math
+import os
+import shutil
+import time
 from dataclasses import dataclass, field
 
 # You can also adapt this script on your own masked language modeling task. Pointers for this are left as comments.
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Callable
-import numpy as np
-from tqdm import tqdm
-from flax.serialization import to_bytes, from_bytes
+from typing import Callable, Dict, Optional, Tuple
 
-
-from torchvision.transforms.functional import InterpolationMode
 import flax
-from flax.training.checkpoints import save_checkpoint, restore_checkpoint
-from flax.training.common_utils import get_metrics, shard, shard_prng_key
 import jax
 import jax.numpy as jnp
-
-from transformers.file_utils import PushToHubMixin
+import numpy as np
 import optax
-from flax import jax_utils, traverse_util
-from flax.training import train_state
+import pandas as pd
 import torch
+from flax import jax_utils, traverse_util
+from flax.serialization import from_bytes, to_bytes
+from flax.training import train_state
+from flax.training.checkpoints import restore_checkpoint, save_checkpoint
+from flax.training.common_utils import get_metrics, onehot, shard, shard_prng_key
 from torchvision.datasets import VisionDataset
 from torchvision.io import ImageReadMode, read_image
 from torchvision.transforms import CenterCrop, ConvertImageDtype, Normalize, Resize
 from torchvision.transforms.functional import InterpolationMode
-from flax.training.common_utils import get_metrics, onehot, shard
+from tqdm import tqdm
 from transformers import (
     BertTokenizerFast,
     HfArgumentParser,
@@ -58,6 +52,7 @@ from transformers import (
     is_tensorboard_available,
     set_seed,
 )
+from transformers.file_utils import PushToHubMixin
 
 from models.flax_clip_vision_bert.configuration_clip_vision_bert import (
     CLIPVisionBertConfig,
@@ -305,7 +300,7 @@ class FlaxDataCollatorForImageLanguageModeling:
     tokenizer: PreTrainedTokenizerBase
     mlm_probability: float = 0.15
     vision_sequence_length: int = 50
-    max_length: int = 512
+    max_length: int = 128
 
     def __post_init__(self):
         if self.tokenizer.mask_token is None:
@@ -329,6 +324,7 @@ class FlaxDataCollatorForImageLanguageModeling:
             padding="max_length",
             max_length=self.max_length - self.vision_sequence_length,
             return_tensors=TensorType.NUMPY,
+            truncation=True
         )  # TODO: Check if truncation is needed.
 
         # If special token mask has been preprocessed, pop it from the dict.
@@ -706,18 +702,19 @@ def main():
     # if training_args.adafactor:
     #     # We use the default parameters here to initialize adafactor,
     #     # For more details about the parameters please check https://github.com/deepmind/optax/blob/ed02befef9bf81cbbf236be3d2b0e032e9ed4a40/optax/_src/alias.py#L74
-    #     optimizer = optax.adafactor(
-    #         learning_rate=linear_decay_lr_schedule_fn,
-    #     )
-    # else:
-    optimizer = optax.adamw(
+    optimizer = optax.adafactor(
         learning_rate=linear_decay_lr_schedule_fn,
-        b1=training_args.adam_beta1,
-        b2=training_args.adam_beta2,
-        eps=training_args.adam_epsilon,
-        weight_decay=training_args.weight_decay,
-        mask=decay_mask_fn,
+        mask=decay_mask_fn
     )
+    # else:
+    # optimizer = optax.adamw(
+    #     learning_rate=linear_decay_lr_schedule_fn,
+    #     b1=training_args.adam_beta1,
+    #     b2=training_args.adam_beta2,
+    #     eps=training_args.adam_epsilon,
+    #     weight_decay=training_args.weight_decay,
+    #     mask=decay_mask_fn,
+    # )
 
     # State
     # Initialize our training
