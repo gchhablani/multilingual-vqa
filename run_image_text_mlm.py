@@ -241,19 +241,23 @@ class ImageTextDataset(VisionDataset):
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
         transforms: Optional[Callable] = None,
+        max_samples: int = None,
     ):
         super().__init__(root, transforms, transform, target_transform)
 
         examples = pd.read_csv(file_path, sep="\t")
-        
+
         image_paths = []
         captions = []
-        for idx,img_file in enumerate(examples["image_file"].values):
+        for idx, img_file in enumerate(examples["image_file"].values):
             if os.path.exists(os.path.join(self.root, img_file)):
                 image_paths.append(img_file)
                 captions.append(examples["caption"].values[idx])
-        self.image_paths = image_paths
-        self.captions = captions
+
+        if max_samples is None:
+            max_samples = len(captions)
+        self.image_paths = image_paths[:max_samples]
+        self.captions = captions[:max_samples]
 
     def _load_image(self, idx: int):
         path = self.image_paths[idx]
@@ -312,26 +316,46 @@ class FlaxDataCollatorForImageLanguageModeling:
 
     def __call__(self, examples) -> Dict[str, np.ndarray]:
 
-        pixel_values = torch.stack([example[0] for example in examples]).permute(0, 2, 3, 1).numpy()
+        pixel_values = (
+            torch.stack([example[0] for example in examples])
+            .permute(0, 2, 3, 1)
+            .numpy()
+        )
         captions = [example[1] for example in examples]
         # Handle dict or lists with proper padding and conversion to tensor.
-        batch = self.tokenizer(captions, return_special_tokens_mask=True,padding='max_length',max_length=self.max_length-self.vision_sequence_length, return_tensors=TensorType.NUMPY) # TODO: Check if truncation is needed.
+        batch = self.tokenizer(
+            captions,
+            return_special_tokens_mask=True,
+            padding="max_length",
+            max_length=self.max_length - self.vision_sequence_length,
+            return_tensors=TensorType.NUMPY,
+        )  # TODO: Check if truncation is needed.
 
         # If special token mask has been preprocessed, pop it from the dict.
-        special_tokens_mask = batch.pop("special_tokens_mask", None) # TODO: Check how to get `special_tokens-mask`
+        special_tokens_mask = batch.pop(
+            "special_tokens_mask", None
+        )  # TODO: Check how to get `special_tokens-mask`
 
         batch["input_ids"], batch["labels"] = self.mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
-        batch["labels"] = np.concatenate((batch["labels"], np.ones((batch["labels"].shape[0], self.vision_sequence_length), np.int32)*-100), axis=1)
+        batch["labels"] = np.concatenate(
+            (
+                batch["labels"],
+                np.ones(
+                    (batch["labels"].shape[0], self.vision_sequence_length), np.int32
+                )
+                * -100,
+            ),
+            axis=1,
+        )
 
         return {
             "pixel_values": pixel_values,
-            "input_ids" : batch["input_ids"],
+            "input_ids": batch["input_ids"],
             "attention_mask": batch["attention_mask"],
             "token_type_ids": batch["token_type_ids"],
-            "labels": batch["labels"]
-
+            "labels": batch["labels"],
         }
 
     def mask_tokens(
@@ -350,14 +374,23 @@ class FlaxDataCollatorForImageLanguageModeling:
         labels[~masked_indices] = -100  # We only compute loss on masked tokens
 
         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = np.random.binomial(1, np.full(labels.shape, 0.8)).astype("bool") & masked_indices
-        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
+        indices_replaced = (
+            np.random.binomial(1, np.full(labels.shape, 0.8)).astype("bool")
+            & masked_indices
+        )
+        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(
+            self.tokenizer.mask_token
+        )
 
         # 10% of the time, we replace masked input tokens with random word
-        indices_random = np.random.binomial(1, np.full(labels.shape, 0.5)).astype("bool")
+        indices_random = np.random.binomial(1, np.full(labels.shape, 0.5)).astype(
+            "bool"
+        )
         indices_random &= masked_indices & ~indices_replaced
 
-        random_words = np.random.randint(self.tokenizer.vocab_size, size=labels.shape, dtype="i4")
+        random_words = np.random.randint(
+            self.tokenizer.vocab_size, size=labels.shape, dtype="i4"
+        )
         inputs[indices_random] = random_words[indices_random]
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
@@ -422,8 +455,19 @@ def create_learning_rate_fn(
 def mb_item(x):
     return x.item() if hasattr(x, "item") else x
 
-#checkpoint functions
-def save_model_checkpoint(model, save_dir, state, logger, organization,  with_opt:bool=False, push_to_hub:bool=False, overwrite=False, **kwargs):
+
+# checkpoint functions
+def save_model_checkpoint(
+    model,
+    save_dir,
+    state,
+    logger,
+    organization,
+    with_opt: bool = False,
+    push_to_hub: bool = False,
+    overwrite=False,
+    **kwargs,
+):
     state = jax_utils.unreplicate(state)
     logger.info(f"Saving Checkpoint in {save_dir}")
     ckpt_save_dir = f"{save_dir}/ckpt-{mb_item(state.step)-1}"
@@ -431,10 +475,7 @@ def save_model_checkpoint(model, save_dir, state, logger, organization,  with_op
         logger.info("checkpoint exists, skipping overwrite")
     else:
         model.save_pretrained(
-            ckpt_save_dir,
-            params=state.params,
-            push_to_hub=False,
-            **kwargs
+            ckpt_save_dir, params=state.params, push_to_hub=False, **kwargs
         )
         if with_opt:
             with open(os.path.join(ckpt_save_dir, "opt_state.msgpack"), "wb") as f:
@@ -443,15 +484,21 @@ def save_model_checkpoint(model, save_dir, state, logger, organization,  with_op
                 json.dump({"step": state.step.item()}, f)
 
         logger.info("checkpoint saved")
-        
+
         if push_to_hub:
             repo_name = Path(save_dir).name
-            repo_url = PushToHubMixin._get_repo_url_from_name(repo_name, organization=organization, private=False, use_auth_token=True)
-            repo = PushToHubMixin._create_or_get_repo(save_dir, repo_url = repo_url, organization=organization, use_auth_token=True)
-            commit_message=f"Saving weights and logs at step {mb_item(state.step)-1}"
-            url = PushToHubMixin._push_to_hub(repo = repo, commit_message=commit_message)
+            repo_url = PushToHubMixin._get_repo_url_from_name(
+                repo_name, organization=organization, private=False, use_auth_token=True
+            )
+            repo = PushToHubMixin._create_or_get_repo(
+                save_dir,
+                repo_url=repo_url,
+                organization=organization,
+                use_auth_token=True,
+            )
+            commit_message = f"Saving weights and logs at step {mb_item(state.step)-1}"
+            url = PushToHubMixin._push_to_hub(repo=repo, commit_message=commit_message)
             logger.info(f"Model pushed to the hub in this commit: {url}")
-
 
 
 def restore_model_checkpoint(save_dir, state, logger):
@@ -467,19 +514,23 @@ def restore_model_checkpoint(save_dir, state, logger):
     step = training_state["step"]
 
     logger.info("checkpoint restored")
-    #return state.replace(step=step, params=params, opt_state=opt_state), step
+    # return state.replace(step=step, params=params, opt_state=opt_state), step
     return params, opt_state, step
 
-def rotate_checkpoints(ckpt_dir:str, save_total_limit:int, logger):
+
+def rotate_checkpoints(ckpt_dir: str, save_total_limit: int, logger):
     "Removes older checkpoints so that `save_total_limit` checkpoints are kept"
     # TODO: what to remove is decided using step number only, we might want to improve that
     ckpts = [str(x) for x in Path(ckpt_dir).glob("ckpt-*")]
     # sort checkpoints by step
-    ckpts_sorted = sorted(ckpts, key=lambda x: int(x.split('-')[-1]))
+    ckpts_sorted = sorted(ckpts, key=lambda x: int(x.split("-")[-1]))
     ckpts_to_delete = ckpts_sorted[:-save_total_limit]
     for ckpt in ckpts_to_delete:
-        logger.info(f"Deleting older checkpoint [{ckpt}] due to save_total_limit ({save_total_limit})")
+        logger.info(
+            f"Deleting older checkpoint [{ckpt}] due to save_total_limit ({save_total_limit})"
+        )
         shutil.rmtree(ckpt)
+
 
 # Main
 def main():
@@ -532,8 +583,9 @@ def main():
             dtype=getattr(jnp, model_args.dtype),
         )
     else:
-        model = FlaxCLIPVisionBertForMaskedLM.from_pretrained(training_args.resume_from_checkpoint)
-
+        model = FlaxCLIPVisionBertForMaskedLM.from_pretrained(
+            training_args.resume_from_checkpoint
+        )
 
     config = model.config
 
@@ -546,12 +598,14 @@ def main():
         data_args.data_dir,
         data_args.train_file,
         transform=preprocess,
+        max_samples=data_args.max_train_samples,
     )
 
     eval_dataset = ImageTextDataset(
         data_args.data_dir,
         data_args.validation_file,
         transform=preprocess,
+        max_samples=data_args.max_eval_samples,
     )
 
     # Tokenizer
@@ -687,7 +741,9 @@ def main():
         state = train_state.TrainState.create(
             apply_fn=model.__call__, params=model.params, tx=optimizer
         )
-        params, opt_state, step = restore_model_checkpoint(training_args.resume_from_checkpoint, state, logger)
+        params, opt_state, step = restore_model_checkpoint(
+            training_args.resume_from_checkpoint, state, logger
+        )
         state = state.replace(
             step=step,
             apply_fn=model.__call__,
@@ -734,7 +790,7 @@ def main():
         return new_state, metrics, new_dropout_rng
 
     # Create parallel version of the train step
-    p_train_step = jax.pmap(train_step, "batch", donate_argnums = (0,))
+    p_train_step = jax.pmap(train_step, "batch", donate_argnums=(0,))
 
     # Eval Step
 
@@ -774,18 +830,28 @@ def main():
     logger.info("***** Running training *****")
     logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {num_epochs}")
-    logger.info(f"  Instantaneous batch size per device = {training_args.per_device_train_batch_size}")
-    logger.info(f"  Total train batch size (w. parallel & distributed) = {train_batch_size}")
+    logger.info(
+        f"  Instantaneous batch size per device = {training_args.per_device_train_batch_size}"
+    )
+    logger.info(
+        f"  Total train batch size (w. parallel & distributed) = {train_batch_size}"
+    )
     logger.info(f"  Total optimization steps = {total_train_steps}")
     if training_args.resume_from_checkpoint is not None:
         previous_step = int(jax_utils.unreplicate(state.step))
-        epoch_start_point = math.ceil((previous_step*train_batch_size)/len(train_dataset))
+        epoch_start_point = math.ceil(
+            (previous_step * train_batch_size) / len(train_dataset)
+        )
     else:
         epoch_start_point = 0
 
     break_all = False
     train_time = 0
-    epochs = tqdm(range(epoch_start_point, num_epochs), desc=f"Epoch:  ({epoch_start_point+1}/{num_epochs})", position=0)
+    epochs = tqdm(
+        range(epoch_start_point, num_epochs),
+        desc=f"Epoch:  ({epoch_start_point+1}/{num_epochs})",
+        position=0,
+    )
     for epoch in epochs:
         # ======================== Training ================================
         train_start = time.time()
@@ -799,7 +865,9 @@ def main():
 
         epochs.desc = f"Epoch:  ({epoch+1}/{num_epochs})"
 
-        train_step_progress_bar = tqdm(total=steps_per_epoch, desc=f"Epoch {epoch+1}: ", position=0, leave=False)
+        train_step_progress_bar = tqdm(
+            total=steps_per_epoch, desc=f"Epoch {epoch+1}: ", position=0, leave=False
+        )
         # Gather the indexes for creating the batch and do a training step
 
         for step, batch in enumerate(train_loader):
@@ -810,17 +878,23 @@ def main():
             train_step_progress_bar.update(1)
 
             cur_step = epoch * (num_train_samples // train_batch_size) + step + 1
-            
+
             if cur_step % training_args.logging_steps == 0 and cur_step > 0:
                 # Save metrics
                 train_metric = jax_utils.unreplicate(train_metric)
                 train_time += time.time() - train_start
                 if has_tensorboard and jax.process_index() == 0:
-                    write_train_metric(summary_writer, train_metrics, train_time, cur_step)
+                    write_train_metric(
+                        summary_writer, train_metrics, train_time, cur_step
+                    )
 
-                epochs.write(f"Log at Step: {cur_step} (Loss: {train_metric['loss']}, Learning Rate: {train_metric['learning_rate']})")
+                epochs.write(
+                    f"Log at Step: {cur_step} (Loss: {train_metric['loss']}, Learning Rate: {train_metric['learning_rate']})"
+                )
 
-                train_metrics = [] # TODO: Check why is this being done? WHat is this needed for?
+                train_metrics = (
+                    []
+                )  # TODO: Check why is this being done? WHat is this needed for?
 
             if cur_step % training_args.eval_steps == 0 and cur_step > 0:
                 # ======================== Evaluating ==============================
@@ -830,7 +904,9 @@ def main():
 
                 eval_metrics = []
                 eval_steps = len(eval_dataset) // eval_batch_size
-                eval_step_progress_bar = tqdm(total=eval_steps, desc="Evaluating: ", position=2, leave=False)
+                eval_step_progress_bar = tqdm(
+                    total=eval_steps, desc="Evaluating: ", position=2, leave=False
+                )
                 for batch in eval_loader:
 
                     # Model forward
@@ -846,7 +922,9 @@ def main():
                 eval_metrics = jax.tree_map(lambda x: x / eval_normalizer, eval_metrics)
 
                 # Update progress bar
-                epochs.write(f"Eval at Step: {cur_step} (Loss: {eval_metrics['loss']}, Acc: {eval_metrics['accuracy']})")
+                epochs.write(
+                    f"Eval at Step: {cur_step} (Loss: {eval_metrics['loss']}, Acc: {eval_metrics['accuracy']})"
+                )
 
                 # Save metrics
                 if has_tensorboard and jax.process_index() == 0:
@@ -862,23 +940,41 @@ def main():
                     #     push_to_hub=training_args.push_to_hub,
                     #     commit_message=f"Saving weights and logs of step {cur_step}",
                     # )
-                    save_model_checkpoint(model, training_args.output_dir, state, logger, training_args.push_to_hub_organization, with_opt=True, push_to_hub=training_args.push_to_hub, overwrite=True)
+                    save_model_checkpoint(
+                        model,
+                        training_args.output_dir,
+                        state,
+                        logger,
+                        training_args.push_to_hub_organization,
+                        with_opt=True,
+                        push_to_hub=training_args.push_to_hub,
+                        overwrite=True,
+                    )
                     # if model_args.save_optimizer:
                     #     # this saves full state including optimizer
                     #     save_checkpoint(training_args.output_dir, state, state.step, keep=training_args.save_total_limit, overwrite=True)
                     if training_args.save_total_limit is not None:
-                        rotate_checkpoints(training_args.output_dir, training_args.save_total_limit, logger)
+                        rotate_checkpoints(
+                            training_args.output_dir,
+                            training_args.save_total_limit,
+                            logger,
+                        )
             train_step_progress_bar.close()
             epochs.update(1)
-            if cur_step==total_train_steps:
-                break_all=True
+            if cur_step == total_train_steps:
+                break_all = True
                 break
 
         if break_all:
             break
     # save model after training is over
     params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
-    model.save_pretrained(training_args.output_dir, params=params, push_to_hub=training_args.push_to_hub, commit_message="Add final model")
+    model.save_pretrained(
+        training_args.output_dir,
+        params=params,
+        push_to_hub=training_args.push_to_hub,
+        commit_message="Add final model",
+    )
 
 
 if __name__ == "__main__":
