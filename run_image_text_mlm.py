@@ -425,7 +425,7 @@ def mb_item(x):
 #checkpoint functions
 def save_model_checkpoint(model, save_dir, state, logger, organization,  with_opt:bool=False, push_to_hub:bool=False, overwrite=False, **kwargs):
     state = jax_utils.unreplicate(state)
-    logger.info(f"SAVING CHECKPOINT IN {save_dir}...")
+    logger.info(f"Saving Checkpoint in {save_dir}")
     ckpt_save_dir = f"{save_dir}/ckpt-{mb_item(state.step)-1}"
     if os.path.exists(ckpt_save_dir) and not overwrite:
         logger.info("checkpoint exists, skipping overwrite")
@@ -455,7 +455,7 @@ def save_model_checkpoint(model, save_dir, state, logger, organization,  with_op
 
 
 def restore_model_checkpoint(save_dir, state, logger):
-    logger.info(f"RESTORING CHECKPOINT FROM {save_dir}...")
+    logger.info(f"Restoring checkpoint from {save_dir}.")
     with open(os.path.join(save_dir, "flax_model.msgpack"), "rb") as f:
         params = from_bytes(state.params, f.read())
 
@@ -785,7 +785,7 @@ def main():
 
     break_all = False
     train_time = 0
-    epochs = tqdm(range(epoch_start_point, num_epochs), desc=f"Epoch ... ({epoch_start_point}/{num_epochs})", position=0)
+    epochs = tqdm(range(epoch_start_point, num_epochs), desc=f"Epoch:  ({epoch_start_point+1}/{num_epochs})", position=0)
     for epoch in epochs:
         # ======================== Training ================================
         train_start = time.time()
@@ -797,7 +797,9 @@ def main():
         # Generate an epoch by shuffling sampling indices from the train dataset
         num_train_samples = len(train_dataset)
 
-        epochs.write(f"Epoch : ({epoch}/{num_epochs})")
+        epochs.desc = f"Epoch:  ({epoch+1}/{num_epochs})"
+
+        train_step_progress_bar = tqdm(total=steps_per_epoch, desc=f"Epoch {epoch+1}: ", position=0, leave=False)
         # Gather the indexes for creating the batch and do a training step
 
         for step, batch in enumerate(train_loader):
@@ -805,7 +807,9 @@ def main():
             state, train_metric, dropout_rngs = p_train_step(state, batch, dropout_rngs)
             train_metrics.append(train_metric)
 
-            cur_step = epoch * (num_train_samples // train_batch_size) + step
+            train_step_progress_bar.update(1)
+
+            cur_step = epoch * (num_train_samples // train_batch_size) + step + 1
             
             if cur_step % training_args.logging_steps == 0 and cur_step > 0:
                 # Save metrics
@@ -814,9 +818,7 @@ def main():
                 if has_tensorboard and jax.process_index() == 0:
                     write_train_metric(summary_writer, train_metrics, train_time, cur_step)
 
-                epochs.write(
-                    f"Log at Step: ({cur_step} | Loss: {train_metric['loss']}, Learning Rate: {train_metric['learning_rate']})"
-                )
+                epochs.write(f"Log at Step: {cur_step} (Loss: {train_metric['loss']}, Learning Rate: {train_metric['learning_rate']})")
 
                 train_metrics = [] # TODO: Check why is this being done? WHat is this needed for?
 
@@ -828,13 +830,14 @@ def main():
 
                 eval_metrics = []
                 eval_steps = len(eval_dataset) // eval_batch_size
-                eval_step_progress_bar = tqdm(total=eval_steps, desc="Evaluating...", position=2, leave=False)
+                eval_step_progress_bar = tqdm(total=eval_steps, desc="Evaluating: ", position=2, leave=False)
                 for batch in eval_loader:
 
                     # Model forward
                     batch = shard(batch)
                     metrics = p_eval_step(state.params, batch)
                     eval_metrics.append(metrics)
+                    eval_step_progress_bar.update(1)
 
                 # normalize eval metrics
                 eval_metrics = get_metrics(eval_metrics)
@@ -843,7 +846,7 @@ def main():
                 eval_metrics = jax.tree_map(lambda x: x / eval_normalizer, eval_metrics)
 
                 # Update progress bar
-                epochs.desc = f"Eval at Step: ({cur_step} | Loss: {eval_metrics['loss']}, Acc: {eval_metrics['accuracy']})"
+                epochs.write(f"Eval at Step: {cur_step} (Loss: {eval_metrics['loss']}, Acc: {eval_metrics['accuracy']})")
 
                 # Save metrics
                 if has_tensorboard and jax.process_index() == 0:
@@ -865,9 +868,12 @@ def main():
                     #     save_checkpoint(training_args.output_dir, state, state.step, keep=training_args.save_total_limit, overwrite=True)
                     if training_args.save_total_limit is not None:
                         rotate_checkpoints(training_args.output_dir, training_args.save_total_limit, logger)
+            train_step_progress_bar.close()
+            epochs.update(1)
             if cur_step==total_train_steps:
                 break_all=True
                 break
+
         if break_all:
             break
     # save model after training is over
