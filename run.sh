@@ -30,7 +30,7 @@ echo "Token found $token"
  --per_device_train_batch_size 64\
  --per_device_eval_batch_size 64\
  --warmup_steps 5000\
- --learning_rate 5e-5
+ --learning_rate 1e-4
 
 
 #  --weight_decay 0.01\

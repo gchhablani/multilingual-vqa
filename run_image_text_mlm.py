@@ -263,7 +263,7 @@ class ImageTextDataset(VisionDataset):
 
     def __getitem__(self, index: int):
         image = self._load_image(index)
-        target = self._load_target(index)
+        target = str(self._load_target(index))
 
         if self.transforms is not None:
             image, target = self.transforms(image, target)
