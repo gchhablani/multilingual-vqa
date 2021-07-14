@@ -61,6 +61,8 @@ from models.flax_clip_vision_bert.modeling_clip_vision_bert import (
     FlaxCLIPVisionBertForMaskedLM,
 )
 
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # Args
 @dataclass

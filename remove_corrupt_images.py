@@ -15,7 +15,7 @@ def check_image(image_file):
     try:
         img = read_image(image_path, mode=ImageReadMode.RGB)
     except:
-        shutil.move(image_path, broken_path)
+        # shutil.move(image_path, broken_path)
         os.remove(image_path)
 
 initial_count = len(os.listdir(path))
