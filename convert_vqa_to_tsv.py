@@ -2,7 +2,7 @@ import json
 import os
 from tqdm import tqdm
 
-with open("../VQAV2/vocabulary_vqa.txt") as f:
+with open("../VQAV2/answers_vqa.txt") as f:
     answers = f.readlines()
 
 answers = [answer.strip() for answer in answers]
