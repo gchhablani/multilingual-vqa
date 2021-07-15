@@ -62,6 +62,7 @@ from models.flax_clip_vision_bert.modeling_clip_vision_bert import (
 )
 
 from PIL import ImageFile
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # Args
@@ -326,7 +327,7 @@ class FlaxDataCollatorForImageLanguageModeling:
             padding="max_length",
             max_length=self.max_length - self.vision_sequence_length,
             return_tensors=TensorType.NUMPY,
-            truncation=True
+            truncation=True,
         )  # TODO: Check if truncation is needed.
 
         # If special token mask has been preprocessed, pop it from the dict.
@@ -957,7 +958,7 @@ def main():
                             training_args.save_total_limit,
                             logger,
                         )
-            
+
             if cur_step == total_train_steps:
                 break_all = True
                 break
