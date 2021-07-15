@@ -39,18 +39,20 @@ model_de = FlaxMarianMTModel.from_pretrained("Helsinki-NLP/opus-mt-en-de", from_
 model_es = FlaxMarianMTModel.from_pretrained("Helsinki-NLP/opus-mt-en-es", from_pt=True)
 model_fr = FlaxMarianMTModel.from_pretrained("Helsinki-NLP/opus-mt-en-fr", from_pt=True)
 
-tokenizer = MarianTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-de", source_lang="en")
+de_tokenizer = MarianTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-de", source_lang="en")
+es_tokenizer = MarianTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-es", source_lang="en")
+fr_tokenizer = MarianTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-fr", source_lang="en")
 
 def generatefr_XX(params, batch):
-      output_ids = model_fr.generate(batch["input_ids"], attention_mask=batch["attention_mask"], params=params, num_beams=4, max_length=64).sequences
+      output_ids = model_fr.generate(batch["input_ids"], attention_mask=batch["attention_mask"], params=params, num_beams=4, max_length=64, early_stopping=True).sequences
       return output_ids
 
 def generatees_XX(params, batch):
-      output_ids = model_es.generate(batch["input_ids"], attention_mask=batch["attention_mask"], params=params, num_beams=4, max_length=64).sequences
+      output_ids = model_es.generate(batch["input_ids"], attention_mask=batch["attention_mask"], params=params, num_beams=4, max_length=64, early_stopping=True).sequences
       return output_ids
 
 def generatede_DE(params, batch):
-      output_ids = model_de.generate(batch["input_ids"], attention_mask=batch["attention_mask"], params=params, num_beams=4, max_length=64).sequences
+      output_ids = model_de.generate(batch["input_ids"], attention_mask=batch["attention_mask"], params=params, num_beams=4, max_length=64, early_stopping=True).sequences
       return output_ids
 
 # def generateru_RU(params, batch, rng):
@@ -69,6 +71,14 @@ map_name = {
     # "ru_RU": p_generate_ru_RU,
 }
 
+
+tokenizer_map = {
+    "fr": fr_tokenizer,
+    "es": es_tokenizer,
+    "de": de_tokenizer,
+    # "ru_RU": p_generate_ru_RU,
+}
+
 map_model_params = {
     "fr": replicate(model_fr.params),
     "es": replicate(model_es.params),
@@ -76,7 +86,7 @@ map_model_params = {
     # "ru_RU": p_generate_ru_RU,
 }
 
-def run_generate(input_str, p_generate, p_params):
+def run_generate(input_str, p_generate, p_params, tokenizer):
     inputs = tokenizer(input_str, return_tensors="jax", padding="max_length", truncation=True, max_length=64)
     p_inputs = shard(inputs.data)
     output_ids = p_generate(p_params, p_inputs)
@@ -96,9 +106,8 @@ def arrange_data(image_files, questions, answer_labels, question_types, lang_cod
     else:
         p_params = map_model_params[lang_code]
         p_generate = map_name[lang_dict[lang_code]]
-
-
-        outputs = run_generate(questions, p_generate, p_params)
+        tokenizer = tokenizer_map[lang_code]
+        outputs = run_generate(questions, p_generate, p_params, tokenizer)
 
         for image_file, output, answer_label, question_type in zip(tqdm(image_files, total=len(image_files), position=0, leave=False, desc=f"Processing for {lang_code} currently"), outputs, answer_labels, question_types):  # add other captions
             lis_.append({"image_file":image_file, "question":output, "answer_label":answer_label,"question_type":question_type, "lang_id": lang_code})
