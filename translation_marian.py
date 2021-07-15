@@ -18,7 +18,7 @@ from transformers import FlaxMarianMTModel, MarianTokenizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--tsv_path", type=str, default=None, help="path of directory where the dataset is stored")
-parser.add_argument("--lang_list", nargs="+", default=["en", "fr", "de", "es"], help="Language list (apart from English)")
+parser.add_argument("--lang_list", nargs="+", default=["fr", "de", "es"], help="Language list (apart from English)")
 parser.add_argument("--save_path", type=str, default=None, help="path of directory where the translated dataset will be stored")
 args = parser.parse_args()
 
@@ -98,12 +98,13 @@ def read_tsv_file(tsv_path):
     print("Number of Examples:", df.shape[0], "for", tsv_path)
     return df
 
-def arrange_data(image_files, questions, answer_labels, question_types, lang_code):  # iterates through all the captions and save there translations
+def arrange_data(image_files, questions, answer_labels, question_types):  # iterates through all the captions and save there translations
     lis_ = []
-    if lang_code=="en":
-        for image_file, question, answer_label, question_type in zip(image_files, questions, answer_labels, question_types):  # add english caption first
-            lis_.append({"image_file":image_file, "question":question, "answer_label":answer_label, "question_type":question_type, "lang_id": "en"})
-    else:
+    # if lang_code=="en":
+    for image_file, question, answer_label, question_type in zip(image_files, questions, answer_labels, question_types):  # add english caption first
+        lis_.append({"image_file":image_file, "question":question, "answer_label":answer_label, "question_type":question_type, "lang_id": "en"})
+
+    for lang_code in LANG_LIST:
         p_params = map_model_params[lang_code]
         p_generate = map_name[lang_dict[lang_code]]
         tokenizer = tokenizer_map[lang_code]
@@ -122,7 +123,7 @@ df = read_tsv_file(DATASET_PATH)
 # train_df.reset_index(drop=True, inplace=True)
 # val_df.reset_index(drop=True, inplace=True)
 
-print("\n train/val dataset created. beginning translation")
+# print("\n train/val dataset created. beginning translation")
 
 # if IS_TRAIN:
 #     df = train_df
@@ -138,11 +139,11 @@ with open(output_file_name, 'w', newline='') as outtsv:  # creates a blank tsv w
     writer = csv.writer(outtsv, delimiter='\t')
     writer.writerow(["image_file", "question", "answer_label", "question_type","lang_id"])
 
-roulette = 0
+# roulette = 0
 for i in tqdm(range(0,len(df),BATCH_SIZE)):
-    lang_code = LANG_LIST[roulette % len(LANG_LIST)]
-    output_batch = arrange_data(list(df["image_file"])[i:i+BATCH_SIZE], list(df["question"])[i:i+BATCH_SIZE], list(df["answer_label"])[i:i+BATCH_SIZE], list(df["question_type"])[i:i+BATCH_SIZE], lang_code)
-    roulette += 1
+    # lang_code = LANG_LIST[roulette % len(LANG_LIST)]
+    output_batch = arrange_data(list(df["image_file"])[i:i+BATCH_SIZE], list(df["question"])[i:i+BATCH_SIZE], list(df["answer_label"])[i:i+BATCH_SIZE], list(df["question_type"])[i:i+BATCH_SIZE])
+    # roulette += 1
     with open(output_file_name, "a", newline='') as f:
       writer = csv.DictWriter(f, fieldnames=["image_file", "question", "answer_label", "question_type","lang_id"], delimiter='\t')
       for batch in output_batch:
