@@ -34,6 +34,7 @@ import optax
 import pandas as pd
 import torch
 from flax import jax_utils, struct, traverse_util
+from itertools import chain
 from flax.serialization import from_bytes, to_bytes
 from flax.training import train_state
 from jax.random import PRNGKey
@@ -61,7 +62,7 @@ from models.flax_clip_vision_bert.configuration_clip_vision_bert import (
 from models.flax_clip_vision_bert.modeling_clip_vision_bert import (
     FlaxCLIPVisionBertForSequenceClassification
 )
-
+from datasets import load_metric
 from PIL import ImageFile
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -168,7 +169,7 @@ class DataTrainingArguments:
         },
     )
     preprocessing_num_workers: Optional[int] = field(
-        default=4,
+        default=8,
         metadata={"help": "The number of processes to use for the preprocessing."},
     )
 
@@ -760,6 +761,7 @@ def main():
         desc=f"Epoch:  ({epoch_start_point+1}/{num_epochs})",
         position=0,
     )
+    metric = load_metric("accuracy")
     for epoch in epochs:
         # ======================== Training ================================
         train_start = time.time()
@@ -811,7 +813,6 @@ def main():
                 num_eval_samples = len(eval_dataset)
                 # eval_samples_idx = jnp.arange(num_eval_samples)
                 # eval_batch_idx = generate_batch_splits(eval_samples_idx, eval_batch_size)
-                metric = load_metric("accuracy")
                 eval_metrics = []
                 eval_steps = len(eval_dataset) // eval_batch_size
                 eval_step_progress_bar = tqdm(
@@ -834,7 +835,7 @@ def main():
 
                 # Save metrics
                 if has_tensorboard and jax.process_index() == 0:
-                    write_eval_metric(summary_writer, eval_metrics, cur_step)
+                    write_eval_metric(summary_writer, eval_metric, cur_step)
 
             if cur_step % training_args.save_steps == 0 and cur_step > 0:
                 # save checkpoint after each epoch and push checkpoint to the hub
