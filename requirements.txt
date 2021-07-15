@@ -13,7 +13,8 @@ tqdm==4.61.2
 git+https://github.com/huggingface/transformers.git
 urllib3==1.26.6
 datasets >= 1.1.3
-"jax[tpu]>=0.2.16" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+jax[tpu]>=0.2.16
+-f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 jaxlib>=0.1.59
 flax>=0.3.4
 optax>=0.0.9
