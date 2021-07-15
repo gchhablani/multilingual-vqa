@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 # You can also adapt this script on your own masked language modeling task. Pointers for this are left as comments.
 from pathlib import Path
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple, Any
 
 import flax
 import jax
@@ -36,6 +36,7 @@ import torch
 from flax import jax_utils, struct, traverse_util
 from flax.serialization import from_bytes, to_bytes
 from flax.training import train_state
+from jax.random import PRNGKey
 from flax.training.checkpoints import restore_checkpoint, save_checkpoint
 from flax.training.common_utils import get_metrics, onehot, shard, shard_prng_key
 from torchvision.datasets import VisionDataset
@@ -64,7 +65,7 @@ from models.flax_clip_vision_bert.modeling_clip_vision_bert import (
 from PIL import ImageFile
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-
+Array = Any
 # Args
 @dataclass
 class ModelArguments:
@@ -80,6 +81,11 @@ class ModelArguments:
     bert_name_or_path: Optional[str] = field(
         default="bert-base-multilingual-uncased",
         metadata={"help": "The bert model checkpoint for weights initialization."},
+    )
+
+    pretrained_checkpoint: Optional[str] = field(
+        default=None,
+        metadata={"help": "The pretrained checkpoint for weights initialization. Takes highest precedence."},
     )
 
     bert_tokenizer_name: Optional[str] = field(
@@ -166,18 +172,6 @@ class DataTrainingArguments:
         metadata={"help": "The number of processes to use for the preprocessing."},
     )
 
-    mlm_probability: float = field(
-        default=0.15,
-        metadata={"help": "Ratio of tokens to mask for masked language modeling loss"},
-    )
-    # pad_to_max_length: bool = field(
-    #     default=True,
-    #     metadata={
-    #         "help": "Whether to pad all samples to `max_seq_length`. "
-    #         "If False, will pad the samples dynamically when batching to the maximum length in the batch."
-    #     },
-    # ) # TODO: CHECK
-
     def __post_init__(self):
         if self.train_file is None and self.validation_file is None:
             raise ValueError("Need both training/validation file.")
@@ -215,22 +209,6 @@ class Transform(torch.nn.Module):
 
 # ImageTextDataset
 class ImageTextDataset(VisionDataset):
-    """
-    Dtaset for loading image-text data for tasks like CLIP training, Image Captioning.
-
-    Args:
-        root: (string): The root path where the dataset is stored
-        file_path: (string): Path to the file containing the image_paths and associated captions.
-            The expected format is jsonlines where each line is a json object containing to keys.
-            `image_path`: The path to the image.
-            `captions`: An `array` of captions.
-        transform (callable, optional): A function/transform that  takes in an PIL image
-            and returns a transformed version. E.g, ``transforms.ToTensor``
-        target_transform (callable, optional): A function/transform that takes in the
-            target and transforms it.
-        transforms (callable, optional): A function/transform that takes input sample and its target as entry
-            and returns a transformed version.
-    """
 
     def __init__(
         self,
@@ -246,18 +224,18 @@ class ImageTextDataset(VisionDataset):
         examples = pd.read_csv(file_path, sep="\t")
 
         image_paths = []
-        captions = []
+        questions = []
         labels = []
         for idx, img_file in enumerate(examples["image_file"].values):
             if os.path.exists(os.path.join(self.root, img_file)):
                 image_paths.append(img_file)
-                captions.append(examples["caption"].values[idx])
+                questions.append(examples["question"].values[idx])
                 labels.append(examples["answer_label"].values[idx])
 
         if max_samples is None:
-            max_samples = len(captions)
+            max_samples = len(questions)
         self.image_paths = image_paths[:max_samples]
-        self.captions = captions[:max_samples]
+        self.questions = questions[:max_samples]
         self.labels = labels[:max_samples]
 
     def _load_image(self, idx: int):
@@ -265,23 +243,23 @@ class ImageTextDataset(VisionDataset):
         return read_image(os.path.join(self.root, path), mode=ImageReadMode.RGB)
 
     def _load_target(self, idx):
-        return self.captions[idx]
+        return self.questions[idx]
 
     def _load_label(self, idx):
         return self.labels[idx]
 
     def __getitem__(self, index: int):
         image = self._load_image(index)
-        target = str(self._load_target(index))
+        question = str(self._load_target(index))
         label = self._load_label(index)
 
         if self.transforms is not None:
-            image, target = self.transforms(image, target)
+            image, question = self.transforms(image, question)
 
-        return image, target, label
+        return image, question, label
 
     def __len__(self) -> int:
-        return len(self.captions)
+        return len(self.questions)
 
 
 # Data Collator
@@ -291,6 +269,9 @@ class ImageTextDataset(VisionDataset):
 class FlaxDataCollatorForImageTextSequenceClassification:
 
     tokenizer: PreTrainedTokenizerBase
+    max_length:int = 128
+    vision_sequence_length:int = 50
+    
     def __call__(self, examples) -> Dict[str, np.ndarray]:
 
         pixel_values = (
@@ -298,11 +279,11 @@ class FlaxDataCollatorForImageTextSequenceClassification:
             .permute(0, 2, 3, 1)
             .numpy()
         )
-        captions = [example[1] for example in examples]
-        labels = [example[2]] for example in examples]
+        questions = [example[1] for example in examples]
+        labels = np.array([example[2] for example in examples])
 
         batch = self.tokenizer(
-            captions,
+            questions,
             padding="max_length",
             max_length=self.max_length - self.vision_sequence_length,
             return_tensors=TensorType.NUMPY,
@@ -319,7 +300,7 @@ class FlaxDataCollatorForImageTextSequenceClassification:
 
 
 def create_train_state(
-    model: FlaxAutoModelForSequenceClassification,
+    model: FlaxCLIPVisionBertForSequenceClassification,
     learning_rate_fn: Callable[[int], float],
     is_regression: bool,
     num_labels: int,
@@ -560,6 +541,7 @@ def main():
         model = FlaxCLIPVisionBertForSequenceClassification.from_clip_vision_bert_pretrained(
             model_args.clip_vision_name_or_path,
             model_args.bert_name_or_path,
+            num_labels=3129,
             seed=training_args.seed,
             dtype=getattr(jnp, model_args.dtype),
         )
@@ -609,8 +591,8 @@ def main():
 
     # Data Collator
     # This one will take care of randomly masking the tokens.
-    data_collator = FlaxDataCollatorForImageLanguageModeling(
-        tokenizer=tokenizer, mlm_probability=data_args.mlm_probability
+    data_collator = FlaxDataCollatorForImageTextSequenceClassification(
+        tokenizer=tokenizer
     )
 
     # Store some constant
@@ -684,12 +666,21 @@ def main():
     # )
 
     # Setup train state
+
+    learning_rate_fn = create_learning_rate_fn(
+        len(train_dataset),
+        train_batch_size,
+        training_args.num_train_epochs,
+        training_args.warmup_steps,
+        training_args.learning_rate,
+    )
+
     state = create_train_state(
         model,
         learning_rate_fn,
-        is_regression,
+        is_regression=False,
         num_labels=3129,
-        weight_decay=args.weight_decay,
+        weight_decay=training_args.weight_decay,
     )
     if training_args.resume_from_checkpoint is not None:
         params, opt_state, step = restore_model_checkpoint(
@@ -788,6 +779,8 @@ def main():
         # Gather the indexes for creating the batch and do a training step
 
         for step, batch in enumerate(train_loader):
+            # print(batch.keys())
+            # print(batch['labels'].shape)
             batch = shard(batch)
             state, train_metric, dropout_rngs = p_train_step(state, batch, dropout_rngs)
             train_metrics.append(train_metric)
