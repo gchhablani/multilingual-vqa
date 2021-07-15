@@ -20,7 +20,7 @@ echo "Token found $token"
  --train_file ./train_file_trans.tsv\
  --validation_file ./val_file_trans.tsv\
  --save_steps 5000\
- --num_train_epochs 10\
+ --num_train_epochs 5\
  --eval_steps 2500\
  --logging_steps 2500\
  --save_total_limit 5\
