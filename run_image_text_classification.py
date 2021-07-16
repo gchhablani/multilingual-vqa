@@ -546,7 +546,7 @@ def main():
             seed=training_args.seed,
             dtype=getattr(jnp, model_args.dtype),
         )
-    elif model_args.pretrained is not None:
+    elif model_args.pretrained_checkpoint is not None:
         model = FlaxCLIPVisionBertForSequenceClassification.from_pretrained(
             model_args.pretrained_checkpoint
         )
