@@ -552,7 +552,7 @@ def main():
         )
     else:
         model = FlaxCLIPVisionBertForSequenceClassification.from_pretrained(
-            training_args.resume_from_checkpointss
+            training_args.resume_from_checkpoint
         )
 
     config = model.config
