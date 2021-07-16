@@ -31,7 +31,7 @@ echo "Token found $token"
  --per_device_eval_batch_size 128\
  --warmup_steps 1600\
  --learning_rate 5e-5\
- --pretrained_checkpoint ./multilingual-vqa/ckpt-54999\
+ --pretrained_checkpoint ./multilingual-vqa/ckpt-59999\
  --weight_decay 0.01
 
 
