@@ -767,7 +767,7 @@ class FlaxCLIPVisionBertForMaskedLM(FlaxPreTrainedModel):
 class FlaxCLIPVisionBertForSequenceClassificationModule(nn.Module):
     config: CLIPVisionBertConfig
     dtype: jnp.dtype = jnp.float32
-    num_labels:int = 2
+    num_labels:int = 3129 # TODO: Remove this hard-coding!
 
     def setup(self):
         self.model = FlaxCLIPVisionBertModule(config=self.config, dtype=self.dtype)
