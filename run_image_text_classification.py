@@ -548,7 +548,7 @@ def main():
         )
     elif model_args.pretrained_checkpoint is not None:
         model = FlaxCLIPVisionBertForSequenceClassification.from_pretrained(
-            model_args.pretrained_checkpoint
+            model_args.pretrained_checkpoint, num_labels=3129
         )
     else:
         model = FlaxCLIPVisionBertForSequenceClassification.from_pretrained(
