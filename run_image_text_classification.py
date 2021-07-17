@@ -407,7 +407,7 @@ def create_learning_rate_fn(
     )
     decay_fn = optax.linear_schedule(
         init_value=learning_rate,
-        end_value=0,
+        end_value=1e-6,
         transition_steps=num_train_steps - num_warmup_steps,
     )
     schedule_fn = optax.join_schedules(
