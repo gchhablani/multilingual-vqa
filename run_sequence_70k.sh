@@ -27,10 +27,10 @@ echo "Token found $token"
  --push_to_hub\
  --push_to_hub_organization flax-community\
  --push_to_hub_token $token\
- --per_device_train_batch_size 128\
- --per_device_eval_batch_size 128\
+ --per_device_train_batch_size 256\
+ --per_device_eval_batch_size 256\
  --learning_rate 1e-5\
- --pretrained_checkpoint ./multilingual-vqa/ckpt-64999\
+ --pretrained_checkpoint ./multilingual-vqa/ckpt-69999\
  --weight_decay 0.1
 
 
