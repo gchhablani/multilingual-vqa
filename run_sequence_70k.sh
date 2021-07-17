@@ -19,10 +19,10 @@ echo "Token found $token"
  --data_dir ~/VQAV2\
  --train_file ./train_file_trans.tsv\
  --validation_file ./val_file_trans.tsv\
- --save_steps 1000\
+ --save_steps 2000\
  --num_train_epochs 10\
- --eval_steps 500\
- --logging_steps 500\
+ --eval_steps 1000\
+ --logging_steps 1000\
  --save_total_limit 5\
  --push_to_hub\
  --push_to_hub_organization flax-community\
