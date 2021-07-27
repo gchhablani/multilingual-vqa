@@ -3,11 +3,25 @@
 </p>
 
 # Multilingual Visual Question Answering
-GitHub Repository for Multilingual-VQA task created during HuggingFace JAX/Flax community week. 
 
 Authors: **Gunjan Chhablani**, **Bhavitvya Malik**
 
+GitHub Repository for Multilingual-VQA task created during HuggingFace JAX/Flax community week. Multilingual VQA addresses the challenge of visual question answering in a multilingual setting. Here, we fuse CLIP Vision transformer into BERT and perform pre-training and fine-tuning on translated versions of Conceptual-12M and VQAv2 datasets.
 
+- Our models are present in the `models` directory. We have combined ViT+BERT and CLIP Vision+BERT in the model repository. 
+- Our training scripts are:
+  - `run_image_text_mlm.py` for pre-training.
+  - `run_image_text_classification.py` for fine-tuning.
+The shell scripts contain the hyperparameters. Our best performing scripts are:
+  - `run.sh` for pre-training.
+  - `run_sequence_60k.sh` for fine-tuning.
+
+## Usage:
+- Install the `requirements.txt` file in your environment.
+- To run a training script, just use your command line:
+```sh
+./run_sequence_60k.sh
+```
 
 ## Table of Contents
 - [Introduction and Motivation](#introduction-and-motivation)
