@@ -68,7 +68,10 @@ Our novel contributions include:
 ### Pre-training
 We follow an approach similar to [VisualBERT](https://arxiv.org/abs/1908.03557). Instead of using a FasterRCNN to get image features, we use a CLIP Vision (ViT transformer) encoder. The pre-training task is text-only MLM (Masked Language Modeling). We mask only the text tokens and try to predict the masked tokens. The VisualBERT authors also use a sentence-image matching task where two captions are matched against an image, but we skip this for the sake of simplicity.
 
-<MODEL IMG PLACEHOLDER>
+
+<p align="center">
+<img src='./Multilingual-VQA.png' width=500/>
+</p>
   
 **MLM Dataset**
 The dataset we use for pre-training is a cleaned version of Conceptual 12M. The dataset is downloaded and then broken images are removed which gives us about 10M images. Then we use the MBart50 mbart-large-50-one-to-many-mmt checkpoint to translate the dataset into four different languages - English, French, German, and Spanish, keeping 2.5 million examples of each language. This dataset is used for MLM pre-training.
