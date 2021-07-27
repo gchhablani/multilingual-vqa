@@ -10,29 +10,29 @@ Authors: **Gunjan Chhablani**, **Bhavitvya Malik**
 
 
 ## Table of Contents
-- [Introduction and Motivation](#introductionandmotivation)
-  - Novel Contributions
-- Methodology
-  - Pre-training
+- [Introduction and Motivation](#introduction-and-motivation)
+  - [Novel Contributions](#novel-contributions)
+- [Methodology](#methodology)
+  - [Pre-training](#pre-training)
     - MLM Dataset
     - MLM Model
     - MLM Training Logs
-  - Finetuning
+  - [Finetuning](#finetuning)
     - VQA Dataset
     - VQA Model
     - VQA Training Logs
-  - Challenges and Technical Difficulties
-  - Limitations and Bias
-  - Conclusion, Future Work, and Social Impact
+  - [Challenges and Technical Difficulties](#challenges-and-technical-difficulties)
+  - [Limitations and Bias](#limitations-and-bias)
+  - [Conclusion, Future Work, and Social Impact](#conclusion,-future-work,-and-social-impact)
     - Conclusion
     - Future Work
     - Social Impact
-  - References
+  - [References](#references)
     - Papers
     - Useful Links
-  - Checkpoints
+  - [Checkpoints](#checkpoints)
     - Other Checkpoints
-  - Acknowledgements
+  - [Acknowledgements](#acknowledgements)
 
 
 ## Introduction and Motivation
