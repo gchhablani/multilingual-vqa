@@ -3,34 +3,36 @@
 </p>
 
 # Multilingual Visual Question Answering
-**Gunjan Chhablani**, **Bhavitvya Malik**
 GitHub Repository for Multilingual-VQA task created during HuggingFace JAX/Flax community week. 
 
+Authors: **Gunjan Chhablani**, **Bhavitvya Malik**
 
-Table of Contents
-Introduction and Motivation
-Novel Contributions
-Methodology
-Pre-training
-MLM Dataset
-MLM Model
-MLM Training Logs
-Finetuning
-VQA Dataset
-VQA Model
-VQA Training Logs
-Challenges and Technical Difficulties
-Limitations and Bias
-Conclusion, Future Work, and Social Impact
-Conclusion
-Future Work
-Social Impact
-References
-Papers
-Useful Links
-Checkpoints
-Other Checkpoints
-Acknowledgements
+
+
+## Table of Contents
+- [Introduction and Motivation](#introductionandmotivation)
+  - Novel Contributions
+- Methodology
+  - Pre-training
+    - MLM Dataset
+    - MLM Model
+    - MLM Training Logs
+  - Finetuning
+    - VQA Dataset
+    - VQA Model
+    - VQA Training Logs
+  - Challenges and Technical Difficulties
+  - Limitations and Bias
+  - Conclusion, Future Work, and Social Impact
+    - Conclusion
+    - Future Work
+    - Social Impact
+  - References
+    - Papers
+    - Useful Links
+  - Checkpoints
+    - Other Checkpoints
+  - Acknowledgements
 
 
 ## Introduction and Motivation
