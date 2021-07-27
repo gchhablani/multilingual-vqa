@@ -1,4 +1,7 @@
-< LOGO IMG PLACEHOLDER>
+<p align="center">
+<img src='./mvqa-logo-3-white.png' width=400/>
+</p>
+
 # Multilingual Visual Question Answering
 **Gunjan Chhablani**, **Bhavitvya Malik**
 GitHub Repository for Multilingual-VQA task created during HuggingFace JAX/Flax community week. 
