@@ -21,18 +21,20 @@ Authors: **Gunjan Chhablani**, **Bhavitvya Malik**
     - VQA Dataset
     - VQA Model
     - VQA Training Logs
-  - [Challenges and Technical Difficulties](#challenges-and-technical-difficulties)
-  - [Limitations and Bias](#limitations-and-bias)
-  - [Conclusion, Future Work, and Social Impact](#conclusion,-future-work,-and-social-impact)
-    - Conclusion
-    - Future Work
-    - Social Impact
-  - [References](#references)
-    - Papers
-    - Useful Links
-  - [Checkpoints](#checkpoints)
-    - Other Checkpoints
-  - [Acknowledgements](#acknowledgements)
+- [Challenges and Technical Difficulties](#challenges-and-technical-difficulties)
+- [Limitations and Bias](#limitations-and-bias)
+  - [Limitations](#limitations)
+  - [Bias](#bias)
+- [Conclusion, Future Work, and Social Impact](#conclusion-future-work-and-social-impact)
+  - [Conclusion](#conclusion)
+  - [Future Work](#future-work)
+  - [Social Impact](#social-impact)
+- [References](#references)
+  - [Papers](#papers)
+  - [Useful Links](#useful-links)
+- [Checkpoints](#checkpoints)
+  - [Other Checkpoints](#other-checkpoints)
+- [Acknowledgements](#acknowledgements)
 
 
 ## Introduction and Motivation
